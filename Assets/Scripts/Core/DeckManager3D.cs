@@ -2,24 +2,14 @@ using UnityEngine;
 using ShitheadMemory;
 using System.Collections.Generic;
 
-public class DeckManager3D : MonoBehaviour
+public class DeckManager_3D : MonoBehaviour
 {
-    public GameObject cardPrefab;
-    public Transform handStartingPosition;
-    public float cardSpacing = 0.9f;
-
     private List<Card> deck = new List<Card>();
-    private List<GameObject> currentHandCards = new List<GameObject>();
 
     private void Start()
     {
         GenerateDeck();
         ShuffleDeck();
-        
-        for (int i = 0; i < 3; i++)
-        {
-            DrawCardToHand();
-        }
     }
 
     void GenerateDeck()
@@ -46,38 +36,26 @@ public class DeckManager3D : MonoBehaviour
         }
     }
 
-    public void DrawCardToHand()
+    // Gibt die nächste Karte aus dem Deck zurück (falls noch da)
+    public bool TryDrawCard(out Card drawnCard)
     {
         if (deck.Count > 0)
         {
-            Card drawnCard = deck[0];
+            drawnCard = deck[0];
             deck.RemoveAt(0);
-
-            // Position deines Nachziehstapels (Passe X/Z an deinen DrawPile an)
-            Vector3 spawnPos = new Vector3(1.4f, 0.4f, 0f);
-
-            // Startet verdeckt auf dem Stapel (Rückseite nach oben)
-            GameObject cardObj = Instantiate(cardPrefab, spawnPos, Quaternion.Euler(-75f, 180f, 0f));
-
-            Card3DViewTest cardView = cardObj.GetComponent<Card3DViewTest>();
-            if (cardView != null)
-            {
-                cardView.SetupCard(drawnCard);
-            }
-
-            // Sofortiges Starten des Drag-Modus, sodass sie direkt an der Maus klebt!
-            CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
-            if (draggable != null)
-            {
-                draggable.StartDraggingImmediately();
-            }
-
-            Debug.Log($"Karte vom Stapel gezogen! Verbleibende Karten: {deck.Count}");
+            Debug.Log($"Karte gezogen. Verbleibend im Deck: {deck.Count}");
+            return true;
         }
-        else
-        {
-            Debug.Log("Der Nachziehstapel ist leer!");
-        }
+
+        drawnCard = null;
+        Debug.Log("Deck ist leer!");
+        return false;
+    }
+
+    // Nimmt verworfene Karten wieder ins Deck auf
+    public void ReturnCardToDeck(Card card)
+    {
+        deck.Add(card);
+        Debug.Log($"Karte ins Deck zurückgelegt. Deck-Größe: {deck.Count}");
     }
 }
-

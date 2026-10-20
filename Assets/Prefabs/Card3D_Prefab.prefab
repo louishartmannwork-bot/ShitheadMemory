@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 702484842439285744}
   - component: {fileID: 334560099139088631}
   - component: {fileID: 2522559616920773090}
+  - component: {fileID: 1371392652942744651}
   m_Layer: 0
   m_Name: Card3D_Prefab
   m_TagString: Untagged
@@ -141,6 +142,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Card3DViewTest
   cardText: {fileID: 840140153861468630}
+--- !u!114 &1371392652942744651
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6172729398999385541}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86423d141fa7f184e920725cf074b8d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CardAnimation_3D
 --- !u!1 &6605955010710010843
 GameObject:
   m_ObjectHideFlags: 0
@@ -269,17 +282,17 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7813614057843186888}
-  m_LocalRotation: {x: -0, y: -0, z: -0.4845405, w: 0.87476885}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 4.620898, y: 4.620898, z: 4.620898}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7173914651747460551}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: -57.965}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -34, y: 0}
-  m_SizeDelta: {x: 200, y: 50}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 150, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &981996384323114594
 CanvasRenderer:
@@ -336,15 +349,15 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 36
-  m_fontSizeBase: 36
+  m_fontSize: 32
+  m_fontSizeBase: 32
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
   m_fontSizeMax: 72
   m_fontStyle: 0
   m_HorizontalAlignment: 2
-  m_VerticalAlignment: 256
+  m_VerticalAlignment: 512
   m_textAlignment: 65535
   m_characterSpacing: 0
   m_characterHorizontalScale: 1

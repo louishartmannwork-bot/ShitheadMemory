@@ -318,7 +318,7 @@ Transform:
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
   m_LocalRotation: {x: 0.38268343, y: 0, z: 0, w: 0.92387956}
-  m_LocalPosition: {x: 0, y: 3, z: -2.5}
+  m_LocalPosition: {x: 0, y: 3, z: -2.8}
   m_LocalScale: {x: 0, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -601,7 +601,7 @@ Transform:
   m_GameObject: {fileID: 521109156}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.396, z: -1.87}
+  m_LocalPosition: {x: 0, y: 0.097, z: -1.648}
   m_LocalScale: {x: 2.02, y: 0.31, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -814,10 +814,10 @@ MonoBehaviour:
   m_GameObject: {fileID: 1447629556}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 08925a6d6b0a3474bb127267407d0341, type: 3}
+  m_Script: {fileID: 11500000, guid: 8d8239bb09d2ae249b83779817d1b926, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DrawPile
-  deckManager: {fileID: 1697254260}
+  m_EditorClassIdentifier: Assembly-CSharp::DrawPile_3D
+  handManager: {fileID: 1697254261}
 --- !u!1 &1697254258
 GameObject:
   m_ObjectHideFlags: 0
@@ -828,6 +828,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1697254259}
   - component: {fileID: 1697254260}
+  - component: {fileID: 1697254261}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -862,9 +863,28 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c4432b9e66c77c54abdf1af04eb28afb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DeckManager3D
+--- !u!114 &1697254261
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1697254258}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d598c9033b762cb449dec24720a27f45, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HandManager_3D
+  deckManager: {fileID: 1697254260}
   cardPrefab: {fileID: 6172729398999385541, guid: 486c22b9b87a9be40980f068b442b1d6, type: 3}
-  handStartingPosition: {fileID: 1207625403}
-  cardSpacing: 0.9
+  widthSpread: 0.6
+  maxHandWidth: 3.5
+  baseHeightY: 0.35
+  layerOffsetY: 0.015
+  smoothSpeed: 12
+  hoverYOffset: 0.2
+  hoverZOffset: -0.3
+  hoverScale: 1.15
 --- !u!1 &2003857402
 GameObject:
   m_ObjectHideFlags: 0
@@ -962,7 +982,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2600368067060567864, guid: b73a734de214834418f7d23c55108d02, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0
+      value: 0.01
       objectReference: {fileID: 0}
     - target: {fileID: 2600368067060567864, guid: b73a734de214834418f7d23c55108d02, type: 3}
       propertyPath: m_LocalRotation.w

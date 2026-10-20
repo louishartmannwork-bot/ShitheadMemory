@@ -2,13 +2,13 @@ using UnityEngine;
 
 public class DrawPile : MonoBehaviour
 {
-    public DeckManager3D deckManager;
+    public HandManager_3D handManager;
 
     private void OnMouseDown()
     {
-        if (deckManager != null)
+        if (handManager != null)
         {
-            deckManager.DrawCardToHand();
+            handManager.DrawCardToPlayerHand();
         }
     }
 }
