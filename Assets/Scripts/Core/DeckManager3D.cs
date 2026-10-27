@@ -4,23 +4,28 @@ using System.Collections.Generic;
 
 public class DeckManager_3D : MonoBehaviour
 {
+    [Header("References")]
+    public GameObject cardPrefab;
+    public HandManager_3D handManager;
+    public Transform deckSpawnPoint;
+
     private List<Card> deck = new List<Card>();
 
-    private void Start()
+    void Start()
     {
-        GenerateDeck();
+        InitializeDeck();
         ShuffleDeck();
     }
 
-    void GenerateDeck()
+    #region Deck Setup & Logic
+    void InitializeDeck()
     {
         deck.Clear();
-        foreach (CardSuit s in System.Enum.GetValues(typeof(CardSuit)))
+        foreach (CardSuit suit in System.Enum.GetValues(typeof(CardSuit)))
         {
-            foreach (CardValue v in System.Enum.GetValues(typeof(CardValue)))
+            foreach (CardValue val in System.Enum.GetValues(typeof(CardValue)))
             {
-                Card newCard = new Card(s, v, null);
-                deck.Add(newCard);
+                deck.Add(new Card(suit, val, null));
             }
         }
     }
@@ -36,26 +41,65 @@ public class DeckManager_3D : MonoBehaviour
         }
     }
 
-    // Gibt die nächste Karte aus dem Deck zurück (falls noch da)
+    public bool HasCards() => deck != null && deck.Count > 0;
+
     public bool TryDrawCard(out Card drawnCard)
     {
-        if (deck.Count > 0)
+        if (HasCards())
         {
             drawnCard = deck[0];
             deck.RemoveAt(0);
-            Debug.Log($"Karte gezogen. Verbleibend im Deck: {deck.Count}");
             return true;
         }
-
         drawnCard = null;
-        Debug.Log("Deck ist leer!");
         return false;
     }
+    #endregion
 
-    // Nimmt verworfene Karten wieder ins Deck auf
-    public void ReturnCardToDeck(Card card)
+    #region Click & Spawn Interaction
+    public void OnDeckClicked()
     {
-        deck.Add(card);
-        Debug.Log($"Karte ins Deck zurückgelegt. Deck-Größe: {deck.Count}");
+        if (TurnManager_3D.Instance != null && !TurnManager_3D.Instance.CanPlayerDrawCard())
+        {
+            OpponentDialogueManager_3D.Instance?.ShowComplaint("Du musst jetzt nicht nachziehen!");
+            return;
+        }
+
+        if (TryDrawCard(out Card cardData))
+        {
+            // --- HIER WIRD DIE KARTE NUN SAUBER BEIM RULE MANAGER REGISTRIERT ---
+            if (RuleManager_3D.Instance != null)
+            {
+                RuleManager_3D.Instance.player1Hand.Add(cardData);
+            }
+            // -------------------------------------------------------------------
+
+            SpawnDraggableCardFromDeck(cardData);
+        }
+        else
+        {
+            Debug.Log("Der Nachziehstapel ist leer!");
+        }
     }
+
+    private void SpawnDraggableCardFromDeck(Card cardData)
+    {
+        if (cardPrefab == null) return;
+
+        Vector3 spawnPos = deckSpawnPoint != null ? deckSpawnPoint.position : transform.position;
+        GameObject cardObj = Instantiate(cardPrefab, spawnPos, Quaternion.Euler(90f, 0f, 0f));
+
+        cardObj.GetComponent<Card3DViewTest>()?.SetupCard(cardData);
+
+        CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
+        if (draggable == null)
+        {
+            draggable = cardObj.AddComponent<CardDraggable3D>();
+        }
+
+        draggable.Init(handManager, this, cardData);
+        draggable.cardData = cardData; // Sicherstellen, dass die Daten zugewiesen sind
+        draggable.StartDraggingImmediately();
+    }
+    #endregion
 }
