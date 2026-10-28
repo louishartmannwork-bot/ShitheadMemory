@@ -8,7 +8,13 @@ public class PlayerHandCursor_3D : MonoBehaviour
 
     [Header("References")]
     [SerializeField] private SpriteRenderer handSpriteRenderer;
-    [SerializeField] private Transform armTransform;
+    [SerializeField] private SpriteRenderer armSpriteRenderer; // Neu: SpriteRenderer für den Arm
+
+    [Header("Sprites per State")]
+    [SerializeField] private Sprite idleSprite;
+    [SerializeField] private Sprite hoverSprite;
+    [SerializeField] private Sprite grabSprite;
+    [SerializeField] private Sprite dragSprite;
 
     [Header("Heights per State")]
     [SerializeField] private float idleHeight = 0.45f;
@@ -16,14 +22,9 @@ public class PlayerHandCursor_3D : MonoBehaviour
     [SerializeField] private float dragHeight = 0.85f;
 
     [Header("Rotation per State (X-Achse Neigung)")]
-    [SerializeField] private float idlePitchX = 75f;   // Neigung im Standard
-    [SerializeField] private float hoverPitchX = 60f;  // Neigung beim Hovern (z.B. 60 Grad)
-    [SerializeField] private float dragPitchX = 75f;   // Neigung beim Ziehen
-
-    [Header("Debug Color Coding")]
-    [SerializeField] private Color idleColor = Color.white;
-    [SerializeField] private Color hoverColor = Color.yellow;
-    [SerializeField] private Color grabColor = Color.green;
+    [SerializeField] private float idlePitchX = 75f;
+    [SerializeField] private float hoverPitchX = 60f;
+    [SerializeField] private float dragPitchX = 75f;
 
     [Header("Movement & Rotation Settings")]
     [SerializeField] private float followSpeed = 30f;
@@ -34,23 +35,21 @@ public class PlayerHandCursor_3D : MonoBehaviour
     [SerializeField] private Vector3 screenEdgeAnchor = new Vector3(0f, -1.5f, -3.5f);
 
     [Header("Arm Reach Limits")]
-    [SerializeField] private float maxArmReach = 6.0f;     // Maximale Länge des Arms
-    [SerializeField] private float minArmReach = 1.0f;     // Minimale Distanz (damit sie nicht im Anker "versinkt")
+    [SerializeField] private float maxArmReach = 6.0f;
+    [SerializeField] private float minArmReach = 1.0f;
 
     [Header("Camera Lean on Max Reach")]
     [SerializeField] private bool enableCameraLean = true;
-    [SerializeField] private float maxCameraPitchAdd = 5.0f; // Max. Neigung nach oben/unten
-    [SerializeField] private float maxCameraYawAdd = 5.0f;   // Max. Drehung nach links/rechts
+    [SerializeField] private float maxCameraPitchAdd = 5.0f;
+    [SerializeField] private float maxCameraYawAdd = 5.0f;
     [SerializeField] private float cameraLeanSpeed = 10f;
 
     private Quaternion initialCamRotation;
-
     private Vector3 lastValidTargetPoint;
-
     private Camera cam;
     private HandState currentState = HandState.Idle;
     private float targetHeightY;
-    private float targetPitchX; // Die aktuelle Ziel-Neigung auf der X-Achse
+    private float targetPitchX;
 
     private void Awake()
     {
@@ -88,22 +87,17 @@ public class PlayerHandCursor_3D : MonoBehaviour
     {
         Vector2 mousePos = UnityEngine.InputSystem.Mouse.current.position.ReadValue();
 
-        // TRICK GEGEN DAS ZITTERN: 
-        // Wir setzen die Kamera für den Raycast kurz auf ihre Start-Rotation zurück,
-        // damit sich Kamera-Neigung und Maus-Berechnung nicht gegenseitig beeinflussen.
         Quaternion tempRot = cam.transform.rotation;
         cam.transform.rotation = initialCamRotation;
         Ray ray = cam.ScreenPointToRay(mousePos);
-        cam.transform.rotation = tempRot; // Sofort wiederherstellen
+        cam.transform.rotation = tempRot;
 
         Plane interactionPlane = new Plane(Vector3.up, new Vector3(0, targetHeightY, 0));
-
         Vector3 targetPoint = lastValidTargetPoint;
 
         if (interactionPlane.Raycast(ray, out float enter))
         {
             Vector3 rawHitPoint = ray.GetPoint(enter) + new Vector3(mouseOffset.x, 0, mouseOffset.y);
-
             Vector3 anchorXZ = new Vector3(screenEdgeAnchor.x, rawHitPoint.y, screenEdgeAnchor.z);
             Vector3 fromAnchorToTarget = rawHitPoint - anchorXZ;
 
@@ -111,7 +105,6 @@ public class PlayerHandCursor_3D : MonoBehaviour
             float excessAmount = 0f;
             Vector3 directionToTarget = fromAnchorToTarget.normalized;
 
-            // --- REICHWEITE PRÜFEN ---
             if (distanceFromAnchor > maxArmReach)
             {
                 excessAmount = distanceFromAnchor - maxArmReach;
@@ -127,7 +120,6 @@ public class PlayerHandCursor_3D : MonoBehaviour
             targetPoint = rawHitPoint;
             lastValidTargetPoint = targetPoint;
 
-            // --- KAMERA-LEAN BEI MAXIMALER REICHWEITE ---
             if (enableCameraLean && cam != null)
             {
                 float targetPitchOffset = 0f;
@@ -154,15 +146,22 @@ public class PlayerHandCursor_3D : MonoBehaviour
             }
         }
 
-        // Hand bewegt sich flüssig zum Ziel
         transform.position = Vector3.Lerp(transform.position, targetPoint, Time.deltaTime * followSpeed);
     }
 
     private void UpdateHandRotation()
     {
-        // Rotiert die Hand sanft auf der X-Achse zum jeweiligen Ziel-Winkel des States
-        Quaternion targetRotation = Quaternion.Euler(targetPitchX, 0f, 0f);
-        transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+        // Combine the arm's direction rotation with the hand's local state tilt (targetPitchX)
+        Vector3 direction = transform.position - screenEdgeAnchor;
+        if (direction != Vector3.zero)
+        {
+            Quaternion lookAtRotation = Quaternion.LookRotation(direction);
+            Quaternion stateTilt = Quaternion.Euler(targetPitchX, 0f, 0f);
+
+            // This makes the hand face the mouse/direction while keeping its state tilt
+            Quaternion targetRotation = lookAtRotation * stateTilt;
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+        }
     }
 
     private void HandleInputState()
@@ -179,8 +178,6 @@ public class PlayerHandCursor_3D : MonoBehaviour
             SetState(HandState.Idle);
         }
     }
-
-    // --- SCHNITTSTELLE FÜR ANDERE SKRIPTE ---
 
     public void NotifyHoverEnter()
     {
@@ -203,8 +200,6 @@ public class PlayerHandCursor_3D : MonoBehaviour
         SetState(HandState.Dragging);
     }
 
-    // ----------------------------------------
-
     private void SetState(HandState newState)
     {
         currentState = newState;
@@ -222,7 +217,7 @@ public class PlayerHandCursor_3D : MonoBehaviour
                 break;
             case HandState.Hover:
                 targetHeightY = hoverHeight;
-                targetPitchX = hoverPitchX; // Hier greifen die 60 Grad!
+                targetPitchX = hoverPitchX;
                 break;
             case HandState.Grab:
             case HandState.Dragging:
@@ -234,21 +229,33 @@ public class PlayerHandCursor_3D : MonoBehaviour
 
     private void UpdateArmTransform()
     {
-        if (armTransform == null) return;
+        if (armSpriteRenderer == null) return;
 
-        Vector3 handPos = transform.position;
-        armTransform.position = (screenEdgeAnchor + handPos) / 2f;
+        Transform armTransform = armSpriteRenderer.transform;
+        Vector3 handPos = transform.position; // Current position of the hand
 
+        // 1. Position the arm right at the shoulder anchor point
+        armTransform.position = screenEdgeAnchor;
+
+        // 2. Calculate direction and distance from anchor to hand
         Vector3 direction = handPos - screenEdgeAnchor;
+        float distance = direction.magnitude;
+
         if (direction != Vector3.zero)
         {
+            // Rotate the arm to point directly at the hand
             armTransform.rotation = Quaternion.LookRotation(direction);
+
+            // If your arm sprite needs a base rotation offset (like your X: 90 rotation), 
+            // you can multiply it here, e.g.: armTransform.rotation *= Quaternion.Euler(90, 0, 0);
         }
 
-        float distance = direction.magnitude;
+        // 3. Stretch the arm dynamically based on the distance to the hand
         Vector3 currentScale = armTransform.localScale;
+        // Adjust currentScale.z (or .y depending on your sprite setup) to match the distance
         armTransform.localScale = new Vector3(currentScale.x, currentScale.y, distance);
     }
+
 
     private void UpdateVisuals()
     {
@@ -256,10 +263,19 @@ public class PlayerHandCursor_3D : MonoBehaviour
 
         switch (currentState)
         {
-            case HandState.Idle: handSpriteRenderer.color = idleColor; break;
-            case HandState.Hover: handSpriteRenderer.color = hoverColor; break;
+            case HandState.Idle:
+                if (idleSprite != null) handSpriteRenderer.sprite = idleSprite;
+                break;
+            case HandState.Hover:
+                if (hoverSprite != null) handSpriteRenderer.sprite = hoverSprite;
+                break;
             case HandState.Grab:
-            case HandState.Dragging: handSpriteRenderer.color = grabColor; break;
+                if (grabSprite != null) handSpriteRenderer.sprite = grabSprite;
+                break;
+            case HandState.Dragging:
+                Sprite spriteToUse = (dragSprite != null) ? dragSprite : grabSprite;
+                if (spriteToUse != null) handSpriteRenderer.sprite = spriteToUse;
+                break;
         }
     }
 }
