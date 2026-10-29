@@ -2,7 +2,7 @@
 - Project name: ShitheadMemory
 - Unity version: Unity 6000.6.2f1
 - Active game object:
-  - Name: TurnManager
+  - Name: PlayerHandCursor
   - Tag: Untagged
   - Layer: Default
 <!-- UNITY CODE ASSIST INSTRUCTIONS END -->

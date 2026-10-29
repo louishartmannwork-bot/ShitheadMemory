@@ -5,7 +5,7 @@ using UnityEngine;
 public class PenaltyPile_3D : MonoBehaviour
 {
     [Header("Player Assignment")]
-    public bool isPlayer1Pile = true; // Haken setzen für Spieler 1
+    public bool isPlayer1Pile = true;
 
     [Header("Click Radius")]
     public float clickRadius = 1.0f;
@@ -24,6 +24,26 @@ public class PenaltyPile_3D : MonoBehaviour
         {
             CheckForClick();
         }
+    }
+
+    private void OnMouseEnter()
+    {
+        if (isPlayer1Pile && RuleManager_3D.Instance != null)
+        {
+            bool isDeckEmpty = RuleManager_3D.Instance.deckManager != null && !RuleManager_3D.Instance.deckManager.HasCards();
+            bool hasPenaltyCards = RuleManager_3D.Instance.player1PenaltyPile.Count > 0;
+
+            // Hover when valid to draw from penalty pile in Phase 2
+            if (isDeckEmpty && hasPenaltyCards && RuleManager_3D.Instance.player1Hand.Count < 3)
+            {
+                PlayerHandCursor_3D.Instance?.NotifyHoverEnter();
+            }
+        }
+    }
+
+    private void OnMouseExit()
+    {
+        PlayerHandCursor_3D.Instance?.NotifyHoverExit();
     }
 
     private void CheckForClick()
@@ -75,44 +95,34 @@ public class PenaltyPile_3D : MonoBehaviour
 
         if (isDeckEmpty)
         {
-            // --- PHASE 2 / ENDGAME LOGIK ---
-
-            // 1. Wenn der Strafstapel noch Karten hat UND deine Hand < 3 ist -> Nachziehen
-            if (hasPenaltyCards && RuleManager_3D.Instance.player1Hand.Count < 3)
+            if (hasPenaltyCards && RuleManager_3D.Instance != null && RuleManager_3D.Instance.player1Hand.Count < 3)
             {
                 HandManager_3D handManager = Object.FindAnyObjectByType<HandManager_3D>();
                 handManager?.TryDrawCardOrFromPenalty();
                 return;
             }
 
-            // 2. Endgame / Strafstapel leer ODER Hand voll: Prüfen ob man legen kann.
-            // Wenn KEINE legalen Züge mehr da sind -> STRAFE AUSLÖSEN!
             List<Card> legalMoves = RuleManager_3D.Instance.GetLegalMoves(RuleManager_3D.Instance.player1Hand);
             if (legalMoves.Count == 0)
             {
-                Debug.Log("[Endgame] Strafstapel leer & keine legalen Züge! Strafe wird ausgelöst.");
                 RuleManager_3D.Instance.TriggerPenaltyClickAction();
                 return;
             }
             else
             {
-                Debug.Log("Du hast noch gültige Karten auf der Hand!");
                 OpponentDialogueManager_3D.Instance?.ShowComplaint("Du hast noch gültige Karten auf der Hand!");
                 return;
             }
         }
 
-        // --- PHASE 1 LOGIK (Hauptdeck hat noch Karten) ---
         List<Card> phase1LegalMoves = RuleManager_3D.Instance.GetLegalMoves(RuleManager_3D.Instance.player1Hand);
 
         if (phase1LegalMoves.Count == 0)
         {
-            Debug.Log("Keine legalen Züge! Strafe wird getriggert.");
             RuleManager_3D.Instance.TriggerPenaltyClickAction();
         }
         else
         {
-            Debug.Log("Du hast noch gültige Karten auf der Hand!");
             OpponentDialogueManager_3D.Instance?.ShowComplaint("Du hast noch gültige Karten auf der Hand!");
         }
     }

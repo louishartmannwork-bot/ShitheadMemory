@@ -69,7 +69,7 @@ public class EnemyHandManager_3D : MonoBehaviour
     }
 
     /// <summary>
-    /// Instanziiert eine visuelle Karte für die Gegnerhand und fügt sie dem Fächer hinzu.
+    /// Instanziiert eine visuelle Karte für die Gegnerhand (z.B. für Strafen) und fügt sie dem Fächer hinzu.
     /// </summary>
     public void AddCardVisual(Card cardData)
     {
@@ -89,6 +89,47 @@ public class EnemyHandManager_3D : MonoBehaviour
         if (draggable != null)
         {
             Destroy(draggable);
+        }
+
+        Collider col = cardObj.GetComponent<Collider>();
+        if (col != null) col.enabled = false;
+
+        enemyHandCards.Add(cardObj);
+    }
+
+    /// <summary>
+    /// Integriert eine bereits existierende physische Karte (vom Deck-Stapel gezogen) in die Gegnerhand.
+    /// </summary>
+    public void AddExistingCardVisual(GameObject cardObj, Card cardData)
+    {
+        if (cardObj == null) return;
+
+        Card3DViewTest cardView = cardObj.GetComponent<Card3DViewTest>();
+        if (cardView != null)
+        {
+            cardView.SetupCard(cardData);
+        }
+
+        // Entferne Player-Draggable-Komponenten, da es nun dem Gegner gehört
+        CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
+        if (draggable != null)
+        {
+            Destroy(draggable);
+        }
+
+        // Collider deaktivieren, damit Gegner-Karten keine Maus-Raycasts abfangen
+        Collider col = cardObj.GetComponent<Collider>();
+        if (col != null)
+        {
+            col.enabled = false;
+        }
+
+        // Physik einfrieren, während sie im Hand-Fächer liegt
+        Rigidbody rb = cardObj.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.isKinematic = true;
+            rb.useGravity = false;
         }
 
         enemyHandCards.Add(cardObj);

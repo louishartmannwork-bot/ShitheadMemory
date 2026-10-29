@@ -1,24 +1,32 @@
 using UnityEngine;
 using ShitheadMemory;
+using System.Collections;
 
 public class CardDraggable3D : MonoBehaviour
 {
     private Camera cam;
-    private Plane dragPlane;
-    private Vector2 lastMousePos;
     private Collider cardCollider;
     private Rigidbody rb;
 
     private HandManager_3D handManager;
     private DeckManager_3D deckManager;
+    public PileManager_3D pileManager;
     public Card cardData;
 
-    [Header("References")]
-    public PileManager_3D pileManager;
-
-    [Header("State Tracking")]
     private bool isDragging = false;
     private bool isIllegalOnTable = false;
+    private bool isCurrentlyHovering = false;
+
+    // --- FACE-DOWN & FLIP STATE ---
+    public bool isFaceDown = false;
+    private bool isFlipping = false;
+    public bool IsFlipping => isFlipping;
+
+    public void SetFaceDown(bool faceDown)
+    {
+        isFaceDown = faceDown;
+    }
+    // ----------------------------
 
     public bool IsDragging => isDragging;
 
@@ -32,19 +40,14 @@ public class CardDraggable3D : MonoBehaviour
     void Start()
     {
         cam = Camera.main;
-        dragPlane = new Plane(Vector3.up, new Vector3(0, 0.6f, 0));
         cardCollider = GetComponent<Collider>();
         rb = GetComponent<Rigidbody>();
-
         DisablePhysics();
     }
 
     void Update()
     {
-        if (!isDragging)
-        {
-            CheckForClickToDrag();
-        }
+        if (!isDragging) CheckForClickToDrag();
         else
         {
             HandleDraggingMovement();
@@ -54,27 +57,35 @@ public class CardDraggable3D : MonoBehaviour
 
     private void OnMouseEnter()
     {
-        if (!isDragging && handManager != null)
-        {
-            handManager.SetHoveredCard(gameObject);
-        }
+        if (isDragging) return;
 
-        if (PlayerHandCursor_3D.Instance != null)
+        bool isInHand = handManager != null && handManager.IsCardInHand(gameObject);
+
+        if (isInHand)
         {
-            PlayerHandCursor_3D.Instance.NotifyHoverEnter();
+            isCurrentlyHovering = true;
+            handManager.SetHoveredCard(gameObject);
+            PlayerHandCursor_3D.Instance?.NotifyHandHoverEnter();
+        }
+        else
+        {
+            PlayerHandCursor_3D.Instance?.NotifyPileHoverEnter();
         }
     }
 
     private void OnMouseExit()
     {
-        if (handManager != null)
-        {
-            handManager.ClearHoveredCard(gameObject);
-        }
+        bool isInHand = handManager != null && handManager.IsCardInHand(gameObject);
 
-        if (PlayerHandCursor_3D.Instance != null)
+        if (isInHand)
         {
-            PlayerHandCursor_3D.Instance.NotifyHoverExit();
+            isCurrentlyHovering = false;
+            if (handManager != null) handManager.ClearHoveredCard(gameObject);
+            PlayerHandCursor_3D.Instance?.NotifyHandHoverExit();
+        }
+        else
+        {
+            PlayerHandCursor_3D.Instance?.NotifyPileHoverExit();
         }
     }
 
@@ -85,57 +96,56 @@ public class CardDraggable3D : MonoBehaviour
         if (UnityEngine.InputSystem.Mouse.current.leftButton.wasPressedThisFrame)
         {
             Ray ray = cam.ScreenPointToRay(UnityEngine.InputSystem.Mouse.current.position.ReadValue());
-            if (Physics.Raycast(ray, out RaycastHit hit))
+            if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider != null && hit.collider.gameObject == gameObject)
             {
-                if (hit.collider != null && hit.collider.gameObject == gameObject)
-                {
-                    PrepareForDrag();
-                }
+                PrepareForDrag();
             }
         }
     }
 
     void PrepareForDrag()
     {
-        if (TurnManager_3D.Instance != null && !TurnManager_3D.Instance.IsPlayerTurn())
+        if (TurnManager_3D.Instance != null && !TurnManager_3D.Instance.IsPlayerTurn()) return;
+
+        if (isCurrentlyHovering)
         {
-            Debug.Log("Warte, bis du am Zug bist!");
-            return;
+            isCurrentlyHovering = false;
+            handManager?.ClearHoveredCard(gameObject);
+            PlayerHandCursor_3D.Instance?.NotifyHandHoverExit();
         }
 
         DisablePhysics();
         handManager?.OnCardPickedUp(gameObject);
-
         isDragging = true;
-        lastMousePos = UnityEngine.InputSystem.Mouse.current.position.ReadValue();
+
+        PlayerHandCursor_3D.Instance?.NotifyHandHoverExit();
 
         Vector3 pos = transform.position;
         pos.y = 0.6f;
         transform.position = pos;
 
-        if (PlayerHandCursor_3D.Instance != null)
-        {
-            PlayerHandCursor_3D.Instance.NotifyCardPickedUp();
-        }
+        PlayerHandCursor_3D.Instance?.NotifyCardPickedUp();
     }
 
     void HandleDraggingMovement()
     {
-        Vector2 mouseScreenPos = UnityEngine.InputSystem.Mouse.current.position.ReadValue();
-        Vector2 mouseDelta = mouseScreenPos - lastMousePos;
-        lastMousePos = mouseScreenPos;
-
         if (PlayerHandCursor_3D.Instance != null)
         {
-            Vector3 handPos = PlayerHandCursor_3D.Instance.transform.position;
-            Vector3 targetCardPos = handPos;
+            Vector3 targetCardPos = PlayerHandCursor_3D.Instance.CardSnapPosition;
             targetCardPos.y = 0.6f;
 
-            transform.position = targetCardPos;
-        }
+            float horizontalOffset = 0.63f;
+            float forwardOffset = 0.0f;
 
-        float tiltZ = Mathf.Clamp(-mouseDelta.x * 0.1f, -15f, 15f);
-        transform.rotation = Quaternion.Euler(75f, 0f, tiltZ);
+            targetCardPos -= PlayerHandCursor_3D.Instance.transform.right * horizontalOffset;
+            targetCardPos += PlayerHandCursor_3D.Instance.transform.forward * forwardOffset;
+
+            transform.position = targetCardPos;
+
+            Quaternion cursorRot = PlayerHandCursor_3D.Instance.transform.rotation;
+            Quaternion pitchOffset = Quaternion.Euler(PlayerHandCursor_3D.Instance.dragPitchX, 0f, 0f);
+            transform.rotation = cursorRot * pitchOffset;
+        }
     }
 
     void CheckForMouseRelease()
@@ -160,7 +170,7 @@ public class CardDraggable3D : MonoBehaviour
         {
             if (RuleManager_3D.Instance != null && RuleManager_3D.Instance.IsMoveLegal(cardData))
             {
-                ExecuteLegalDropOnPile(targetDropPoint);
+                ExecuteLegalDropOnPile();
             }
             else
             {
@@ -169,48 +179,23 @@ public class CardDraggable3D : MonoBehaviour
             return;
         }
 
-        ExecuteIllegalDrop("Was soll das werden? Die Karte liegt mitten auf dem Tisch, nimm sie wieder auf!");
+        ExecuteIllegalDrop("Was soll das werden? Die Karte liegt mitten auf dem Tisch!");
     }
 
     bool IsDroppedOnPile(out Vector3 targetDropPoint)
     {
         targetDropPoint = transform.position;
-
-        Vector3 rayStartPos = new Vector3(transform.position.x, 5f, transform.position.z);
-        RaycastHit[] hits = Physics.RaycastAll(new Ray(rayStartPos, Vector3.down), 10f);
-
-        foreach (RaycastHit hit in hits)
-        {
-            if (hit.collider.gameObject == gameObject) continue;
-
-            PileManager_3D foundPile = hit.collider.GetComponentInParent<PileManager_3D>();
-            if (foundPile != null)
-            {
-                if (pileManager == null) pileManager = foundPile;
-                targetDropPoint = hit.point;
-                return true;
-            }
-        }
-
-        if (pileManager == null && RuleManager_3D.Instance != null)
-        {
-            pileManager = RuleManager_3D.Instance.pileManager;
-        }
+        if (pileManager == null && RuleManager_3D.Instance != null) pileManager = RuleManager_3D.Instance.pileManager;
 
         if (pileManager != null)
         {
-            float distanceToPile = Vector3.Distance(
-                new Vector3(transform.position.x, 0, transform.position.z),
-                new Vector3(pileManager.transform.position.x, 0, pileManager.transform.position.z)
-            );
-
-            if (distanceToPile < 1.5f)
+            float distance = Vector3.Distance(new Vector3(transform.position.x, 0, transform.position.z), new Vector3(pileManager.transform.position.x, 0, pileManager.transform.position.z));
+            if (distance < 1.5f)
             {
                 targetDropPoint = pileManager.transform.position;
                 return true;
             }
         }
-
         return false;
     }
 
@@ -218,6 +203,7 @@ public class CardDraggable3D : MonoBehaviour
     {
         DisablePhysics();
         handManager?.AddCardToHand(gameObject);
+        PlayerHandCursor_3D.Instance?.NotifyCardReleased();
 
         if (isIllegalOnTable)
         {
@@ -225,31 +211,59 @@ public class CardDraggable3D : MonoBehaviour
             TurnManager_3D.Instance?.ResolveIllegalCardOnTable();
         }
 
-        if (cardCollider != null) cardCollider.enabled = true;
-        Debug.Log("Karte erfolgreich in der Hand einsortiert.");
+        // --- SMOOTH FLIP OR INSTANT PLACEMENT ---
+        if (isFaceDown)
+        {
+            StartCoroutine(FlipToFaceUpRoutine());
+        }
+        else
+        {
+            Quaternion targetRot = Quaternion.Euler(0f, transform.rotation.eulerAngles.y, 0f);
+            transform.rotation = targetRot;
+            if (cardCollider != null) cardCollider.enabled = true;
+        }
     }
 
-    void ExecuteLegalDropOnPile(Vector3 hitPoint)
+    private IEnumerator FlipToFaceUpRoutine()
+    {
+        isFlipping = true;
+        isFaceDown = false;
+
+        Quaternion startRot = transform.rotation;
+        Quaternion targetRot = Quaternion.Euler(0f, transform.rotation.eulerAngles.y, 0f);
+
+        float duration = 0.3f; // Smooth flip duration in seconds
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            transform.rotation = Quaternion.Slerp(startRot, targetRot, t);
+            yield return null;
+        }
+
+        transform.rotation = targetRot;
+        isFlipping = false;
+        if (cardCollider != null) cardCollider.enabled = true;
+    }
+
+    void ExecuteLegalDropOnPile()
     {
         handManager?.RemoveCardFromHand(gameObject);
+        PlayerHandCursor_3D.Instance?.NotifyCardReleased();
 
         if (RuleManager_3D.Instance != null && cardData != null)
         {
             RuleManager_3D.Instance.player1Hand.Remove(cardData);
-
-            // Freien Zug nach erfolgreichem Ablegen beenden
             RuleManager_3D.Instance.ResetFreeTurn();
         }
 
         pileManager?.AddCardToPile(cardData, gameObject);
-
         transform.rotation = Quaternion.Euler(90, Random.Range(-10f, 10f), 0);
         EnablePhysics();
 
-        // Dem TurnManager signalisieren, dass die Karte gelegt wurde 
-        // (Er wechselt nun intern in 'WaitingForPlayerDraw', falls Hand < 3 ist)
         TurnManager_3D.Instance?.OnPlayerCompletedMove();
-
         Destroy(this);
     }
 
@@ -258,13 +272,12 @@ public class CardDraggable3D : MonoBehaviour
         OpponentDialogueManager_3D.Instance?.ShowComplaint(message);
         EnemyAI_3D.Instance?.RecordPlayerMistake();
         handManager?.RemoveCardFromHand(gameObject);
+        PlayerHandCursor_3D.Instance?.NotifyCardReleased();
 
-        // --- AUCH BEI FEHLERN WIRD SIE AUS DER HAND ENTFERNT ---
         if (RuleManager_3D.Instance != null && cardData != null)
         {
             RuleManager_3D.Instance.player1Hand.Remove(cardData);
         }
-        // ------------------------------------------------------
 
         if (!isIllegalOnTable)
         {
@@ -279,19 +292,11 @@ public class CardDraggable3D : MonoBehaviour
     void EnablePhysics()
     {
         if (cardCollider != null) cardCollider.enabled = true;
-        if (rb != null)
-        {
-            rb.isKinematic = false;
-            rb.useGravity = true;
-        }
+        if (rb != null) { rb.isKinematic = false; rb.useGravity = true; }
     }
 
     void DisablePhysics()
     {
-        if (rb != null)
-        {
-            rb.isKinematic = true;
-            rb.useGravity = false;
-        }
+        if (rb != null) { rb.isKinematic = true; rb.useGravity = false; }
     }
 }

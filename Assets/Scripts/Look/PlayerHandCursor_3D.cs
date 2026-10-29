@@ -1,55 +1,81 @@
 using UnityEngine;
+using ShitheadMemory;
 
 public class PlayerHandCursor_3D : MonoBehaviour
 {
     public static PlayerHandCursor_3D Instance;
 
-    public enum HandState { Idle, Hover, Grab, Dragging }
+    public enum HandState { Idle, HandHover, PileHover, GrabEmpty, Dragging }
 
     [Header("References")]
+    [SerializeField] private Transform armRotatePivot;
+    [SerializeField] private Transform handRotatePivot;
+    [SerializeField] private Transform cursorHotspot;
     [SerializeField] private SpriteRenderer handSpriteRenderer;
-    [SerializeField] private SpriteRenderer armSpriteRenderer; // Neu: SpriteRenderer für den Arm
 
     [Header("Sprites per State")]
     [SerializeField] private Sprite idleSprite;
-    [SerializeField] private Sprite hoverSprite;
-    [SerializeField] private Sprite grabSprite;
+    [SerializeField] private Sprite handHoverSprite;
+    [SerializeField] private Sprite pileHoverSprite;
+    [SerializeField] private Sprite grabEmptySprite;
     [SerializeField] private Sprite dragSprite;
 
-    [Header("Heights per State")]
-    [SerializeField] private float idleHeight = 0.45f;
-    [SerializeField] private float hoverHeight = 0.65f;
-    [SerializeField] private float dragHeight = 0.85f;
+    [Header("Height Offsets per State (Added to Scene Baselines)")]
+    [SerializeField] private float idleHeightOffset = 0f;
+    [SerializeField] private float handHoverHeightOffset = 0.55f;
+    [SerializeField] private float pileHoverHeightOffset = 0.1f;
+    [SerializeField] private float grabEmptyHeightOffset = 0.05f;
+    [SerializeField] private float dragHeightOffset = 0.3f;
 
-    [Header("Rotation per State (X-Achse Neigung)")]
-    [SerializeField] private float idlePitchX = 75f;
-    [SerializeField] private float hoverPitchX = 60f;
-    [SerializeField] private float dragPitchX = 75f;
+    [Header("Hand Pitch X-Rotation per State")]
+    [SerializeField] private float idlePitchX = 90f;
+    [SerializeField] private float handHoverPitchX = 65f;
+    [SerializeField] private float pileHoverPitchX = 80f;
+    [SerializeField] private float grabEmptyPitchX = 90f;
+    [SerializeField] public float dragPitchX = 80f;
 
-    [Header("Movement & Rotation Settings")]
-    [SerializeField] private float followSpeed = 30f;
+    [Header("Arm Pitch Offsets per State")]
+    [SerializeField] private float armIdlePitchOffset = 0f;
+    [SerializeField] private float armHandHoverPitchOffset = 0f;
+    [SerializeField] private float armPileHoverPitchOffset = 40.85f;
+    [SerializeField] private float armGrabEmptyPitchOffset = 0f;
+    [SerializeField] private float armDragPitchOffset = 0f;
+
+    [Header("Movement & Cursor Alignment")]
+    [SerializeField] private float followSpeed = 25f;
     [SerializeField] private float rotationSpeed = 15f;
-    [SerializeField] private Vector3 mouseOffset = new Vector2(0.2f, -0.2f);
+    [SerializeField] private Vector3 screenEdgeAnchor = new Vector3(2f, 0f, -3f);
+    [SerializeField] private float maxArmReach = 4f;
+    [SerializeField] private float minArmReach = 1f;
 
-    [Header("Arm Anchor")]
-    [SerializeField] private Vector3 screenEdgeAnchor = new Vector3(0f, -1.5f, -3.5f);
-
-    [Header("Arm Reach Limits")]
-    [SerializeField] private float maxArmReach = 6.0f;
-    [SerializeField] private float minArmReach = 1.0f;
-
-    [Header("Camera Lean on Max Reach")]
+    [Header("Camera Lean & Follow Settings")]
     [SerializeField] private bool enableCameraLean = true;
-    [SerializeField] private float maxCameraPitchAdd = 5.0f;
-    [SerializeField] private float maxCameraYawAdd = 5.0f;
+    [SerializeField] private float insideCamFollowWeight = 0.15f;
+    [SerializeField] private float maxCameraPitchAdd = 8.0f;
+    [SerializeField] private float maxCameraYawAdd = 8.0f;
     [SerializeField] private float cameraLeanSpeed = 10f;
 
-    private Quaternion initialCamRotation;
-    private Vector3 lastValidTargetPoint;
+    public Vector3 CardSnapPosition => cursorHotspot != null ? cursorHotspot.position : transform.position;
+
     private Camera cam;
     private HandState currentState = HandState.Idle;
-    private float targetHeightY;
+
+    private float targetHeightOffset;
+    private float currentHeightOffset;
     private float targetPitchX;
+    private float targetArmPitchOffset;
+    private Vector3 lastValidTargetPoint;
+    private Quaternion initialCamRotation;
+
+    private Vector3 initialArmLocalPos;
+    private Quaternion initialArmLocalRot;
+    private Vector3 initialHandLocalPos;
+    private Quaternion initialHandLocalRot;
+    private float initialHandPitchX;
+
+    private int handHoverCount = 0;
+    private int pileHoverCount = 0;
+    private bool isHoldingCard = false;
 
     private void Awake()
     {
@@ -63,23 +89,33 @@ public class PlayerHandCursor_3D : MonoBehaviour
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Confined;
 
-        targetHeightY = idleHeight;
+        if (armRotatePivot != null)
+        {
+            initialArmLocalPos = armRotatePivot.localPosition;
+            initialArmLocalRot = armRotatePivot.localRotation;
+        }
+        if (handRotatePivot != null)
+        {
+            initialHandLocalPos = handRotatePivot.localPosition;
+            initialHandLocalRot = handRotatePivot.localRotation;
+            initialHandPitchX = handRotatePivot.localEulerAngles.x;
+        }
+
+        targetHeightOffset = idleHeightOffset;
+        currentHeightOffset = idleHeightOffset;
         targetPitchX = idlePitchX;
+        targetArmPitchOffset = armIdlePitchOffset;
         SetState(HandState.Idle);
 
         lastValidTargetPoint = transform.position;
-
-        if (cam != null)
-        {
-            initialCamRotation = cam.transform.rotation;
-        }
+        if (cam != null) initialCamRotation = cam.transform.rotation;
     }
 
     void Update()
     {
         FollowMousePosition();
-        UpdateHandRotation();
-        UpdateArmTransform();
+        UpdateHeights();
+        UpdateRotations();
         HandleInputState();
     }
 
@@ -92,13 +128,14 @@ public class PlayerHandCursor_3D : MonoBehaviour
         Ray ray = cam.ScreenPointToRay(mousePos);
         cam.transform.rotation = tempRot;
 
-        Plane interactionPlane = new Plane(Vector3.up, new Vector3(0, targetHeightY, 0));
+        // Plane locked to current height offset to prevent perspective parallax offset
+        Plane tablePlane = new Plane(Vector3.up, new Vector3(0f, currentHeightOffset, 0f));
         Vector3 targetPoint = lastValidTargetPoint;
 
-        if (interactionPlane.Raycast(ray, out float enter))
+        if (tablePlane.Raycast(ray, out float enter))
         {
-            Vector3 rawHitPoint = ray.GetPoint(enter) + new Vector3(mouseOffset.x, 0, mouseOffset.y);
-            Vector3 anchorXZ = new Vector3(screenEdgeAnchor.x, rawHitPoint.y, screenEdgeAnchor.z);
+            Vector3 rawHitPoint = ray.GetPoint(enter);
+            Vector3 anchorXZ = new Vector3(screenEdgeAnchor.x, 0f, screenEdgeAnchor.z);
             Vector3 fromAnchorToTarget = rawHitPoint - anchorXZ;
 
             float distanceFromAnchor = fromAnchorToTarget.magnitude;
@@ -117,7 +154,14 @@ public class PlayerHandCursor_3D : MonoBehaviour
                 rawHitPoint = anchorXZ + fromAnchorToTarget;
             }
 
-            targetPoint = rawHitPoint;
+            targetPoint = new Vector3(rawHitPoint.x, currentHeightOffset, rawHitPoint.z);
+
+            if (cursorHotspot != null)
+            {
+                Vector3 hotspotOffset = cursorHotspot.position - transform.position;
+                targetPoint -= new Vector3(hotspotOffset.x, 0f, hotspotOffset.z);
+            }
+
             lastValidTargetPoint = targetPoint;
 
             if (enableCameraLean && cam != null)
@@ -125,11 +169,15 @@ public class PlayerHandCursor_3D : MonoBehaviour
                 float targetPitchOffset = 0f;
                 float targetYawOffset = 0f;
 
+                float normalReachFactor = Mathf.Clamp01(distanceFromAnchor / maxArmReach);
+                targetPitchOffset += -directionToTarget.z * normalReachFactor * insideCamFollowWeight * maxCameraPitchAdd;
+                targetYawOffset += directionToTarget.x * normalReachFactor * insideCamFollowWeight * maxCameraYawAdd;
+
                 if (excessAmount > 0f)
                 {
-                    float clampedExcess = Mathf.Min(excessAmount, 2f);
-                    targetPitchOffset = -directionToTarget.z * clampedExcess * maxCameraPitchAdd;
-                    targetYawOffset = directionToTarget.x * clampedExcess * maxCameraYawAdd;
+                    float clampedExcess = Mathf.Min(excessAmount, 3f);
+                    targetPitchOffset += -directionToTarget.z * clampedExcess * maxCameraPitchAdd;
+                    targetYawOffset += directionToTarget.x * clampedExcess * maxCameraYawAdd;
                 }
 
                 Quaternion offsetRotation = Quaternion.Euler(targetPitchOffset, targetYawOffset, 0f);
@@ -149,59 +197,137 @@ public class PlayerHandCursor_3D : MonoBehaviour
         transform.position = Vector3.Lerp(transform.position, targetPoint, Time.deltaTime * followSpeed);
     }
 
-    private void UpdateHandRotation()
+    private void UpdateHeights()
     {
-        // Combine the arm's direction rotation with the hand's local state tilt (targetPitchX)
-        Vector3 direction = transform.position - screenEdgeAnchor;
-        if (direction != Vector3.zero)
-        {
-            Quaternion lookAtRotation = Quaternion.LookRotation(direction);
-            Quaternion stateTilt = Quaternion.Euler(targetPitchX, 0f, 0f);
+        currentHeightOffset = Mathf.Lerp(currentHeightOffset, targetHeightOffset, Time.deltaTime * followSpeed);
 
-            // This makes the hand face the mouse/direction while keeping its state tilt
-            Quaternion targetRotation = lookAtRotation * stateTilt;
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+        if (armRotatePivot != null)
+        {
+            Vector3 targetPos = initialArmLocalPos;
+            targetPos.y += currentHeightOffset;
+            armRotatePivot.localPosition = Vector3.Lerp(armRotatePivot.localPosition, targetPos, Time.deltaTime * followSpeed);
+        }
+
+        if (handRotatePivot != null)
+        {
+            Vector3 targetPos = initialHandLocalPos;
+            targetPos.y += currentHeightOffset;
+            handRotatePivot.localPosition = Vector3.Lerp(handRotatePivot.localPosition, targetPos, Time.deltaTime * followSpeed);
+        }
+    }
+
+    private void UpdateRotations()
+    {
+        Vector3 directionToAnchor = transform.position - screenEdgeAnchor;
+        directionToAnchor.y = 0f;
+        if (directionToAnchor != Vector3.zero)
+        {
+            Quaternion lookAtRotation = Quaternion.LookRotation(directionToAnchor);
+            transform.rotation = Quaternion.Slerp(transform.rotation, lookAtRotation, Time.deltaTime * rotationSpeed);
+        }
+
+        if (armRotatePivot != null)
+        {
+            Quaternion targetArmRot = initialArmLocalRot * Quaternion.Euler(targetArmPitchOffset, 0f, 0f);
+            armRotatePivot.localRotation = Quaternion.Slerp(armRotatePivot.localRotation, targetArmRot, Time.deltaTime * rotationSpeed);
+        }
+
+        if (handRotatePivot != null)
+        {
+            float pitchDelta = targetPitchX - initialHandPitchX;
+            Quaternion targetHandRot = initialHandLocalRot * Quaternion.Euler(pitchDelta, 0f, 0f);
+            handRotatePivot.localRotation = Quaternion.Slerp(handRotatePivot.localRotation, targetHandRot, Time.deltaTime * rotationSpeed);
         }
     }
 
     private void HandleInputState()
     {
-        if (UnityEngine.InputSystem.Mouse.current.leftButton.isPressed)
+        var mouse = UnityEngine.InputSystem.Mouse.current;
+        if (mouse == null) return;
+
+        if (mouse.leftButton.wasPressedThisFrame)
         {
-            if (currentState != HandState.Dragging && currentState != HandState.Grab)
+            if (isHoldingCard) SetState(HandState.Dragging);
+            else SetState(HandState.GrabEmpty);
+        }
+        else if (mouse.leftButton.wasReleasedThisFrame)
+        {
+            if (!isHoldingCard)
             {
-                SetState(HandState.Dragging);
+                EvaluateHoverState();
             }
         }
-        else if (currentState == HandState.Dragging || currentState == HandState.Grab)
-        {
-            SetState(HandState.Idle);
-        }
     }
 
-    public void NotifyHoverEnter()
+    public void NotifyHoverEnter() => NotifyPileHoverEnter();
+    public void NotifyHoverExit() => NotifyPileHoverExit();
+
+    public void NotifyHandHoverEnter()
     {
-        if (currentState != HandState.Dragging && currentState != HandState.Grab)
-        {
-            SetState(HandState.Hover);
-        }
+        handHoverCount++;
+        EvaluateHoverState();
     }
 
-    public void NotifyHoverExit()
+    public void NotifyHandHoverExit()
     {
-        if (currentState != HandState.Dragging && currentState != HandState.Grab)
-        {
-            SetState(HandState.Idle);
-        }
+        handHoverCount = Mathf.Max(0, handHoverCount - 1);
+        Debug.Log($"[Hand Hover Exit] New handHoverCount: {handHoverCount}");
+        EvaluateHoverState();
     }
+
+    public void NotifyPileHoverEnter()
+    {
+        pileHoverCount++;
+        EvaluateHoverState();
+    }
+
+    public void NotifyPileHoverExit()
+    {
+        pileHoverCount = Mathf.Max(0, pileHoverCount - 1);
+        EvaluateHoverState();
+    }
+
+    private void EvaluateHoverState()
+    {
+        if (mouseButtonDown || isHoldingCard || currentState == HandState.Dragging) return;
+        ForceEvaluateHoverState();
+    }
+
+    private void ForceEvaluateHoverState()
+    {
+        if (isHoldingCard) return;
+
+        if (handHoverCount > 0) SetState(HandState.HandHover);
+        else if (pileHoverCount > 0) SetState(HandState.PileHover);
+        else SetState(HandState.Idle);
+    }
+
+    private bool mouseButtonDown => UnityEngine.InputSystem.Mouse.current != null && UnityEngine.InputSystem.Mouse.current.leftButton.isPressed;
 
     public void NotifyCardPickedUp()
     {
+        isHoldingCard = true;
         SetState(HandState.Dragging);
+    }
+
+    public void NotifyCardReleased()
+    {
+        isHoldingCard = false;
+
+        // Clean reset on release. Natural OnMouseEnter events will instantly 
+        // re-trigger the correct hover state on the very next frame if the mouse is over a card.
+        handHoverCount = 0;
+        pileHoverCount = 0;
+        ForceEvaluateHoverState();
     }
 
     private void SetState(HandState newState)
     {
+        if (currentState != newState)
+        {
+            Debug.Log($"[Cursor State Change] Changing from {currentState} to {newState} | HandCount: {handHoverCount} | PileCount: {pileHoverCount}");
+        }
+
         currentState = newState;
         UpdateStateValues();
         UpdateVisuals();
@@ -212,50 +338,32 @@ public class PlayerHandCursor_3D : MonoBehaviour
         switch (currentState)
         {
             case HandState.Idle:
-                targetHeightY = idleHeight;
+                targetHeightOffset = idleHeightOffset;
                 targetPitchX = idlePitchX;
+                targetArmPitchOffset = armIdlePitchOffset;
                 break;
-            case HandState.Hover:
-                targetHeightY = hoverHeight;
-                targetPitchX = hoverPitchX;
+            case HandState.HandHover:
+                targetHeightOffset = handHoverHeightOffset;
+                targetPitchX = handHoverPitchX;
+                targetArmPitchOffset = armHandHoverPitchOffset;
                 break;
-            case HandState.Grab:
+            case HandState.PileHover:
+                targetHeightOffset = pileHoverHeightOffset;
+                targetPitchX = pileHoverPitchX;
+                targetArmPitchOffset = armPileHoverPitchOffset;
+                break;
+            case HandState.GrabEmpty:
+                targetHeightOffset = grabEmptyHeightOffset;
+                targetPitchX = grabEmptyPitchX;
+                targetArmPitchOffset = armGrabEmptyPitchOffset;
+                break;
             case HandState.Dragging:
-                targetHeightY = dragHeight;
+                targetHeightOffset = dragHeightOffset;
                 targetPitchX = dragPitchX;
+                targetArmPitchOffset = armDragPitchOffset;
                 break;
         }
     }
-
-    private void UpdateArmTransform()
-    {
-        if (armSpriteRenderer == null) return;
-
-        Transform armTransform = armSpriteRenderer.transform;
-        Vector3 handPos = transform.position; // Current position of the hand
-
-        // 1. Position the arm right at the shoulder anchor point
-        armTransform.position = screenEdgeAnchor;
-
-        // 2. Calculate direction and distance from anchor to hand
-        Vector3 direction = handPos - screenEdgeAnchor;
-        float distance = direction.magnitude;
-
-        if (direction != Vector3.zero)
-        {
-            // Rotate the arm to point directly at the hand
-            armTransform.rotation = Quaternion.LookRotation(direction);
-
-            // If your arm sprite needs a base rotation offset (like your X: 90 rotation), 
-            // you can multiply it here, e.g.: armTransform.rotation *= Quaternion.Euler(90, 0, 0);
-        }
-
-        // 3. Stretch the arm dynamically based on the distance to the hand
-        Vector3 currentScale = armTransform.localScale;
-        // Adjust currentScale.z (or .y depending on your sprite setup) to match the distance
-        armTransform.localScale = new Vector3(currentScale.x, currentScale.y, distance);
-    }
-
 
     private void UpdateVisuals()
     {
@@ -266,15 +374,21 @@ public class PlayerHandCursor_3D : MonoBehaviour
             case HandState.Idle:
                 if (idleSprite != null) handSpriteRenderer.sprite = idleSprite;
                 break;
-            case HandState.Hover:
-                if (hoverSprite != null) handSpriteRenderer.sprite = hoverSprite;
+            case HandState.HandHover:
+                if (handHoverSprite != null) handSpriteRenderer.sprite = handHoverSprite;
+                else if (idleSprite != null) handSpriteRenderer.sprite = idleSprite;
                 break;
-            case HandState.Grab:
-                if (grabSprite != null) handSpriteRenderer.sprite = grabSprite;
+            case HandState.PileHover:
+                if (pileHoverSprite != null) handSpriteRenderer.sprite = pileHoverSprite;
+                else if (idleSprite != null) handSpriteRenderer.sprite = idleSprite;
+                break;
+            case HandState.GrabEmpty:
+                if (grabEmptySprite != null) handSpriteRenderer.sprite = grabEmptySprite;
+                else if (idleSprite != null) handSpriteRenderer.sprite = idleSprite;
                 break;
             case HandState.Dragging:
-                Sprite spriteToUse = (dragSprite != null) ? dragSprite : grabSprite;
-                if (spriteToUse != null) handSpriteRenderer.sprite = spriteToUse;
+                if (dragSprite != null) handSpriteRenderer.sprite = dragSprite;
+                else if (handHoverSprite != null) handSpriteRenderer.sprite = handHoverSprite;
                 break;
         }
     }

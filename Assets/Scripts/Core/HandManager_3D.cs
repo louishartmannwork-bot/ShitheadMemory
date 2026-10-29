@@ -4,9 +4,14 @@ using System.Collections.Generic;
 
 public class HandManager_3D : MonoBehaviour
 {
+    public static HandManager_3D Instance; // Singleton reference for cross-script access
+
     [Header("References")]
     public DeckManager_3D deckManager;
     public GameObject cardPrefab;
+
+    [Header("Hand Area Settings")]
+    public Transform handAreaAnchor; // Drag an empty GameObject here to position your hand area in the scene!
 
     [Header("Hand Layout Settings")]
     public float widthSpread = 0.6f;
@@ -25,6 +30,12 @@ public class HandManager_3D : MonoBehaviour
     private Vector3 defaultCardScale = Vector3.one;
     public Card cardData;
 
+    private void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+    }
+
     void Start()
     {
         if (cardPrefab != null)
@@ -37,9 +48,14 @@ public class HandManager_3D : MonoBehaviour
     {
         UpdateHandLayout();
     }
+
+    public bool IsCardInHand(GameObject cardObj)
+    {
+        return currentHandCards.Contains(cardObj);
+    }
+
     public void TryDrawCardOrFromPenalty()
     {
-        // 1. Handkarten-Begrenzung
         if (RuleManager_3D.Instance != null && RuleManager_3D.Instance.player1Hand.Count >= 3)
         {
             Debug.Log("Du hast bereits 3 Karten auf der Hand!");
@@ -49,7 +65,6 @@ public class HandManager_3D : MonoBehaviour
         Card drawnCard = null;
         bool drawnFromPenalty = false;
 
-        // 2. Fall A: Aus dem Haupt-Deck ziehen
         if (deckManager != null && deckManager.HasCards())
         {
             if (deckManager.TryDrawCard(out drawnCard))
@@ -57,7 +72,6 @@ public class HandManager_3D : MonoBehaviour
                 drawnFromPenalty = false;
             }
         }
-        // Fall B: Phase 2 – Aus dem Strafstapel ziehen
         else if (RuleManager_3D.Instance != null && RuleManager_3D.Instance.player1PenaltyPile.Count > 0)
         {
             List<Card> penaltyPile = RuleManager_3D.Instance.player1PenaltyPile;
@@ -66,7 +80,6 @@ public class HandManager_3D : MonoBehaviour
             penaltyPile.RemoveAt(lastIndex);
             drawnFromPenalty = true;
 
-            // Das oberste 3D-Objekt vom visuellen Strafstapel entfernen
             Transform spawnPoint = RuleManager_3D.Instance.player1PenaltySpawnPoint;
             if (spawnPoint != null && spawnPoint.childCount > 0)
             {
@@ -81,10 +94,8 @@ public class HandManager_3D : MonoBehaviour
             return;
         }
 
-        // 3. Karten-Logik im RuleManager aktualisieren
         RuleManager_3D.Instance.player1Hand.Add(drawnCard);
 
-        // 4. Visuelles Objekt erstellen
         Vector3 spawnPos = drawnFromPenalty
             ? RuleManager_3D.Instance.player1PenaltySpawnPoint.position + Vector3.up * 0.2f
             : new Vector3(1.4f, 0.4f, 0f);
@@ -98,11 +109,10 @@ public class HandManager_3D : MonoBehaviour
             draggable.Init(this, deckManager, drawnCard);
             draggable.cardData = drawnCard;
             currentHandCards.Add(cardObj);
-
-            // WICHTIG: Sofort per Drag greifen, damit der Spieler sie an der Maus führt
             draggable.StartDraggingImmediately();
         }
     }
+
     #region Hand Layout & Animation
     void UpdateHandLayout()
     {
@@ -117,23 +127,45 @@ public class HandManager_3D : MonoBehaviour
             if (card == null) continue;
 
             CardDraggable3D draggable = card.GetComponent<CardDraggable3D>();
-            if (draggable != null && draggable.IsDragging) continue;
 
-            float xPos = (i - (totalCards - 1) / 2.0f) * currentSpread;
-            float yPos = baseHeightY + (i * layerOffsetY);
-            float zPos = -1.5f;
+            // --- PREVENT HAND LAYOUT FROM OVERRIDING DRAGGING OR FLIPPING ---
+            if (draggable != null && (draggable.IsDragging || draggable.IsFlipping)) continue;
+            // ----------------------------------------------------------------
+
+            float xOffset = (i - (totalCards - 1) / 2.0f) * currentSpread;
+            float yOffset = baseHeightY + (i * layerOffsetY);
+            float zOffset = 0f;
             Vector3 targetScale = defaultCardScale;
 
             if (card == hoveredCard)
             {
-                yPos += hoverYOffset + 0.2f;
-                zPos += hoverZOffset;
+                yOffset += hoverYOffset + 0.2f;
+                zOffset += hoverZOffset;
                 targetScale = defaultCardScale * hoverScale;
             }
 
-            Vector3 targetPos = new Vector3(xPos, yPos, zPos);
-            float rotationAngle = -xPos * 12f;
-            Quaternion targetRot = Quaternion.Euler(60f, 0f, rotationAngle);
+            Vector3 targetPos;
+            Quaternion targetRot;
+
+            if (handAreaAnchor != null)
+            {
+                Vector3 localPos = new Vector3(xOffset, yOffset, zOffset);
+                targetPos = handAreaAnchor.position + handAreaAnchor.TransformDirection(localPos);
+
+                float rotationAngle = -xOffset * 12f;
+                Quaternion localRot = Quaternion.Euler(60f, 0f, rotationAngle);
+                targetRot = handAreaAnchor.rotation * localRot;
+            }
+            else
+            {
+                float xPos = xOffset;
+                float yPos = yOffset;
+                float zPos = -1.5f + zOffset;
+                targetPos = new Vector3(xPos, yPos, zPos);
+
+                float rotationAngle = -xPos * 12f;
+                targetRot = Quaternion.Euler(60f, 0f, rotationAngle);
+            }
 
             CardAnimation_3D anim = card.GetComponent<CardAnimation_3D>();
             anim?.MoveTowards(targetPos, targetRot, targetScale, smoothSpeed);
@@ -158,16 +190,9 @@ public class HandManager_3D : MonoBehaviour
         }
         if (deckManager != null && deckManager.TryDrawCard(out Card drawnCard))
         {
-            Debug.Log($"Gezogene Karte: {drawnCard.value} of {drawnCard.suit}");
-
             if (RuleManager_3D.Instance != null)
             {
                 RuleManager_3D.Instance.player1Hand.Add(drawnCard);
-                Debug.Log($"Karte erfolgreich zu RuleManager player1Hand hinzugefügt! Neue Anzahl: {RuleManager_3D.Instance.player1Hand.Count}");
-            }
-            else
-            {
-                Debug.LogError("RuleManager_3D.Instance ist NULL!");
             }
 
             Vector3 spawnPos = new Vector3(1.4f, 0.4f, 0f);
@@ -178,12 +203,8 @@ public class HandManager_3D : MonoBehaviour
             CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
             if (draggable != null)
             {
-                // Übergib die Daten sauber über die Init-Methode:
                 draggable.Init(this, deckManager, drawnCard);
-
-                // Falls du direkt darauf zugreifen willst, mach cardData in CardDraggable3D public:
                 draggable.cardData = drawnCard;
-
                 currentHandCards.Add(cardObj);
                 draggable.StartDraggingImmediately();
             }
@@ -207,6 +228,7 @@ public class HandManager_3D : MonoBehaviour
             currentHandCards.Remove(cardObj);
         }
     }
+
     public void ClearPlayerHandVisuals()
     {
         foreach (GameObject cardObj in currentHandCards)
@@ -219,9 +241,6 @@ public class HandManager_3D : MonoBehaviour
         currentHandCards.Clear();
     }
 
-    /// <summary>
-    /// Instanziiert eine Karte direkt in der Hand (wird für das automatische Nachziehen bei Strafen genutzt).
-    /// </summary>
     public void AddCardVisualDirectly(Card cardData)
     {
         if (cardPrefab == null) return;
