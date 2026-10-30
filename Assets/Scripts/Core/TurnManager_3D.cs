@@ -30,11 +30,11 @@ public class TurnManager_3D : MonoBehaviour
     {
         if (currentState == GameState.WaitingForPlayerDraw)
         {
-            drawTimer += UnityEngine.Time.deltaTime;
+            drawTimer += Time.deltaTime;
             if (drawTimer >= drawReminderTimeout && !hasRemindedPlayer)
             {
                 hasRemindedPlayer = true;
-                OpponentDialogueManager_3D.Instance?.ShowComplaint("Ey! Zieh erst eine Karte nach, bevor ich legen kann!");
+                OpponentDialogueManager_3D.Instance?.ShowComplaint("Zieh mal nach!");
             }
         }
     }

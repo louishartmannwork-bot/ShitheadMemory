@@ -142,6 +142,8 @@ public class CardDraggable3D : MonoBehaviour
 
             transform.position = targetCardPos;
 
+            //THIS IS THE PROBLEM WITH THE CARDS INSTANT SWITCHING FIX SOON!!!!!!!!!!
+
             Quaternion cursorRot = PlayerHandCursor_3D.Instance.transform.rotation;
             Quaternion pitchOffset = Quaternion.Euler(PlayerHandCursor_3D.Instance.dragPitchX, 0f, 0f);
             transform.rotation = cursorRot * pitchOffset;
@@ -174,12 +176,12 @@ public class CardDraggable3D : MonoBehaviour
             }
             else
             {
-                ExecuteIllegalDrop("Hey! Die Karte ist zu niedrig, du kannst sie hier nicht ablegen!");
+                ExecuteIllegalDrop("Digger die Karte ísses halt einfach nicht");
             }
             return;
         }
 
-        ExecuteIllegalDrop("Was soll das werden? Die Karte liegt mitten auf dem Tisch!");
+        ExecuteIllegalDrop("Bruder leg doch auf den ablagestapel");
     }
 
     bool IsDroppedOnPile(out Vector3 targetDropPoint)
@@ -211,7 +213,6 @@ public class CardDraggable3D : MonoBehaviour
             TurnManager_3D.Instance?.ResolveIllegalCardOnTable();
         }
 
-        // --- SMOOTH FLIP OR INSTANT PLACEMENT ---
         if (isFaceDown)
         {
             StartCoroutine(FlipToFaceUpRoutine());

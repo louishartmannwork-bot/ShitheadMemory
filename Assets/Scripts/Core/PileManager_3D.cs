@@ -54,24 +54,6 @@ public class PileManager_3D : MonoBehaviour
         pileCardObjects.Clear();
         Debug.Log("Ablagestapel wurde geleert/weggebrannt.");
     }
-    public List<Card> TakeAllPileCards()
-    {
-        List<Card> cardsToTake = new List<Card>(pileCards);
-
-        // Visuelle Karten-GameObjects auf dem Tisch zerstören
-        foreach (GameObject obj in pileCardObjects)
-        {
-            if (obj != null)
-            {
-                Destroy(obj);
-            }
-        }
-
-        pileCards.Clear();
-        pileCardObjects.Clear();
-        Debug.Log("Ablagestapel wurde vom Gegner komplett aufgenommen.");
-        return cardsToTake;
-    }
     public List<Card> GetDiscardPile()
     {
         return pileCards;
