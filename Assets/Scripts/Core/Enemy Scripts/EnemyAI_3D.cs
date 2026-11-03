@@ -58,7 +58,7 @@ public class EnemyAI_3D : MonoBehaviour
         playerMistakes++;
         if (playerMistakes >= maxMistakes)
         {
-            OpponentDialogueManager_3D.Instance?.ShowComplaint("Es reicht! Du hast 10 Fehler gemacht. Ich gewinne!");
+            OpponentDialogueManager_3D.Instance?.ShowComplaint("Junge kannst du nich nach den regeln spielen? ich hab kein bock mehr");
             TurnManager_3D.Instance?.SetGameOver();
             Time.timeScale = 0f;
         }
@@ -80,7 +80,7 @@ public class EnemyAI_3D : MonoBehaviour
         }
         else
         {
-            OpponentDialogueManager_3D.Instance?.ShowComplaint("Verdammt, ich kann nicht legen! Gib mir deine Handkarten!");
+            OpponentDialogueManager_3D.Instance?.ShowComplaint("Ok dann kann ich halt nich man");
             ExecuteEnemyPenalty();
 
             List<Card> freeLegalMoves = RuleManager_3D.Instance.GetLegalMoves(enemyHand);
