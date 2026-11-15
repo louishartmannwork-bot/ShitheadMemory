@@ -43,44 +43,67 @@ public class TurnManager_3D : MonoBehaviour
     {
         if (currentState == GameState.GameOver) return;
         ResetDrawTimer();
-        currentState = GameState.WaitingForPlayerDraw;
         EvaluateTurnProgression();
     }
 
     public void OnCardAddedToHand()
     {
-        if (currentState == GameState.WaitingForPlayerDraw)
-        {
-            ResetDrawTimer();
-            EvaluateTurnProgression();
-        }
+        if (currentState == GameState.GameOver) return;
+        ResetDrawTimer();
+        EvaluateTurnProgression();
     }
 
-    private void EvaluateTurnProgression()
+    /// <summary>
+    /// Evaluates turn flow. Dictates that if hand is under 3, player MUST draw. Enemy is locked out.
+    /// </summary>
+    public void EvaluateTurnProgression()
     {
+        if (currentState == GameState.GameOver) return;
+
         int cardCount = playerHandManager != null ? playerHandManager.GetHandCount() : 0;
+        bool handIsFull = cardCount >= 3;
+
         bool deckHasCards = deckManager != null && deckManager.HasCards();
         bool hasPenaltyCards = RuleManager_3D.Instance != null && RuleManager_3D.Instance.player1PenaltyPile.Count > 0;
-
-        bool handIsFull = cardCount >= 3;
         bool noCardsLeftToDraw = !deckHasCards && !hasPenaltyCards;
 
+        // If hand is not full AND there are cards left to get, force player to draw.
+        if (!handIsFull && !noCardsLeftToDraw)
+        {
+            currentState = GameState.WaitingForPlayerDraw;
+            return;
+        }
+
+        // If hand is full or completely out of cards, hand over control to the enemy turn.
         if (handIsFull || noCardsLeftToDraw)
         {
             currentState = GameState.Busy;
-            Invoke(nameof(StartEnemyTurn), 0.8f);
-        }
-        else
-        {
-            currentState = GameState.WaitingForPlayerDraw;
+            Invoke(nameof(StartEnemyTurn), 0.6f);
         }
     }
 
-    private void StartEnemyTurn()
+    public void StartEnemyTurn()
     {
         if (currentState == GameState.GameOver) return;
+        CancelInvoke(nameof(StartEnemyTurn));
         currentState = GameState.EnemyTurn;
+
         EnemyAI_3D.Instance?.PlayTurn();
+    }
+
+    public void StartPlayerTurn()
+    {
+        if (currentState == GameState.GameOver) return;
+
+        int cardCount = playerHandManager != null ? playerHandManager.GetHandCount() : 0;
+        if (cardCount < 3)
+        {
+            currentState = GameState.WaitingForPlayerDraw;
+        }
+        else
+        {
+            currentState = GameState.PlayerTurn;
+        }
     }
 
     public void ScheduleEndEnemyTurn(float delay = 0.8f)
@@ -89,22 +112,21 @@ public class TurnManager_3D : MonoBehaviour
         Invoke(nameof(StartPlayerTurn), delay);
     }
 
-    public void StartPlayerTurn()
-    {
-        if (currentState == GameState.GameOver) return;
-        currentState = GameState.PlayerTurn;
-    }
-
+    /// <summary>
+    /// THE SINGLE SOURCE OF TRUTH: If hand count is < 3, drawing is ALWAYS allowed.
+    /// </summary>
     public bool CanPlayerDrawCard()
     {
         if (currentState == GameState.GameOver) return false;
+
         if (illegalCardsOnTableCount > 0)
         {
             OpponentDialogueManager_3D.Instance?.ShowComplaint("Nimm erst deine falsch gelegte Karte vom Tisch auf!");
             return false;
         }
+
         int cardCount = playerHandManager != null ? playerHandManager.GetHandCount() : 0;
-        return cardCount < 3 && (currentState == GameState.PlayerTurn || currentState == GameState.WaitingForPlayerDraw);
+        return cardCount < 3;
     }
 
     public void RegisterIllegalCardOnTable() => illegalCardsOnTableCount++;

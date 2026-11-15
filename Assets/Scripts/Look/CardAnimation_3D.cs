@@ -6,13 +6,11 @@ public class CardAnimation_3D : MonoBehaviour
 {
     private Coroutine activeAnimation;
 
-    // Sanftes Nachverfolgen von Zielposition, Zielrotation UND Zielskalierung
     public void MoveTowards(Vector3 targetPos, Quaternion targetRot, Vector3 targetScale, float speed)
     {
         if (activeAnimation != null)
         {
-            StopCoroutine(activeAnimation);
-            activeAnimation = null;
+            return;
         }
 
         transform.position = Vector3.Lerp(transform.position, targetPos, Time.deltaTime * speed);
@@ -42,7 +40,7 @@ public class CardAnimation_3D : MonoBehaviour
             t = Mathf.SmoothStep(0f, 1f, t);
 
             transform.position = Vector3.Lerp(startPos, targetPos, t);
-            transform.rotation = Quaternion.Lerp(startRot, targetRot, t);
+            transform.rotation = Quaternion.Slerp(startRot, targetRot, t);
 
             yield return null;
         }

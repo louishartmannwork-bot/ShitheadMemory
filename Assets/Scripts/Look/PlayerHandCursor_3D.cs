@@ -271,7 +271,6 @@ public class PlayerHandCursor_3D : MonoBehaviour
     public void NotifyHandHoverExit()
     {
         handHoverCount = Mathf.Max(0, handHoverCount - 1);
-        Debug.Log($"[Hand Hover Exit] New handHoverCount: {handHoverCount}");
         EvaluateHoverState();
     }
 
@@ -323,11 +322,6 @@ public class PlayerHandCursor_3D : MonoBehaviour
 
     private void SetState(HandState newState)
     {
-        if (currentState != newState)
-        {
-            Debug.Log($"[Cursor State Change] Changing from {currentState} to {newState} | HandCount: {handHoverCount} | PileCount: {pileHoverCount}");
-        }
-
         currentState = newState;
         UpdateStateValues();
         UpdateVisuals();

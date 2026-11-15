@@ -1,61 +1,114 @@
 using UnityEngine;
-using ShitheadMemory;
 using System.Collections.Generic;
+using ShitheadMemory;
 
 public class PileManager_3D : MonoBehaviour
 {
-    [Header("Pile Settings")]
-    public Transform pileCenterPoint; // Optional: Der exakte Ablagepunkt auf dem Tisch
+    public static PileManager_3D Instance;
 
-    // Liste aller Karten, die aktuell auf dem Ablagestapel liegen (Index 0 = ganz unten, Ende der Liste = ganz oben)
-    private List<Card> pileCards = new List<Card>();
-    private List<GameObject> pileCardObjects = new List<GameObject>();
+    [Header("Discard Pile Storage")]
+    [SerializeField] private List<Card> discardPileData = new List<Card>();
+    [SerializeField] private List<GameObject> discardPileObjects = new List<GameObject>();
 
-    /// <string>
-    /// Fügt eine neu ausgespielte Karte dem Ablagestapel hinzu.
-    /// </string>
+    [Header("Pile Transform / Layout")]
+    public Transform pileCenterPoint;
+
+    private void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+    }
+
+    /// <summary>
+    /// Adds a played card (both data and physical GameObject) onto the discard pile.
+    /// </summary>
     public void AddCardToPile(Card cardData, GameObject cardObj)
     {
         if (cardData != null)
         {
-            pileCards.Add(cardData);
-            pileCardObjects.Add(cardObj);
-
-            Debug.Log($"Karte {cardData.value} of {cardData.suit} auf Ablagestapel gelegt. Gesamtkarten auf Stapel: {pileCards.Count}");
+            discardPileData.Add(cardData);
         }
-    }
 
-    /// <summary>
-    /// Gibt die oberste Karte zurück, die aktuell geschlagen werden muss.
-    /// Gibt 'null' zurück, wenn der Stapel leer ist.
-    /// </summary>
-    public Card GetTopCard()
-    {
-        if (pileCards.Count > 0)
+        if (cardObj != null)
         {
-            return pileCards[pileCards.Count - 1];
+            discardPileObjects.Add(cardObj);
+
+            if (pileCenterPoint != null)
+            {
+                // Drop the card slightly above the pile center point so gravity can pull it down naturally
+                Vector3 dropSpawnPos = pileCenterPoint.position + new Vector3(
+                    Random.Range(-0.02f, 0.02f),
+                    0.4f + (discardPileObjects.Count * 0.02f), // Stack height offset
+                    Random.Range(-0.02f, 0.02f)
+                );
+
+                cardObj.transform.position = dropSpawnPos;
+                cardObj.transform.rotation = Quaternion.Euler(
+                    Random.Range(90f, 90f),
+                    Random.Range(-10f, 10f),
+                    Random.Range(-10f, 10f)
+                );
+
+                // Enable physics so it drops satisfyingly onto the pile
+                Rigidbody rb = cardObj.GetComponent<Rigidbody>();
+                if (rb != null)
+                {
+                    rb.isKinematic = false;
+                    rb.useGravity = true;
+                    rb.linearVelocity = new Vector3(Random.Range(-0.2f, 0.2f), -0.1f, Random.Range(-0.2f, 0.2f));
+                }
+
+                Collider col = cardObj.GetComponent<Collider>();
+                if (col != null)
+                {
+                    col.enabled = true;
+                }
+            }
         }
-        return null;
     }
 
     /// <summary>
-    /// Optional: Leert den Ablagestapel (z.B. wenn er "weggebrannt" wird).
+    /// Clears the discard pile (used when a penalty is triggered or pile is burned).
     /// </summary>
     public void ClearPile()
     {
-        foreach (GameObject obj in pileCardObjects)
+        foreach (GameObject obj in discardPileObjects)
         {
             if (obj != null)
             {
                 Destroy(obj);
             }
         }
-        pileCards.Clear();
-        pileCardObjects.Clear();
-        Debug.Log("Ablagestapel wurde geleert/weggebrannt.");
+        discardPileObjects.Clear();
+        discardPileData.Clear();
+        Debug.Log("[PileManager] Discard pile cleared.");
     }
+
+    /// <summary>
+    /// Returns the full list of card data currently on the discard pile.
+    /// </summary>
     public List<Card> GetDiscardPile()
     {
-        return pileCards;
+        return discardPileData;
+    }
+
+    /// <summary>
+    /// Returns the top card data on the pile, or null if the pile is empty.
+    /// </summary>
+    public Card GetTopCard()
+    {
+        if (discardPileData.Count > 0)
+        {
+            return discardPileData[discardPileData.Count - 1];
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Returns true if the discard pile has cards.
+    /// </summary>
+    public bool HasCards()
+    {
+        return discardPileData.Count > 0;
     }
 }

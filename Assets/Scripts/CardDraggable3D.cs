@@ -14,7 +14,6 @@ public class CardDraggable3D : MonoBehaviour
     public Card cardData;
 
     private bool isDragging = false;
-    private bool isIllegalOnTable = false;
     private bool isCurrentlyHovering = false;
 
     // --- FACE-DOWN & FLIP STATE ---
@@ -22,13 +21,9 @@ public class CardDraggable3D : MonoBehaviour
     private bool isFlipping = false;
     public bool IsFlipping => isFlipping;
 
-    public void SetFaceDown(bool faceDown)
-    {
-        isFaceDown = faceDown;
-    }
-    // ----------------------------
-
+    public void SetFaceDown(bool faceDown) => isFaceDown = faceDown;
     public bool IsDragging => isDragging;
+    // ----------------------------
 
     public void Init(HandManager_3D hand, DeckManager_3D deck, Card data)
     {
@@ -55,6 +50,7 @@ public class CardDraggable3D : MonoBehaviour
         }
     }
 
+    #region Hover & Click Interaction
     private void OnMouseEnter()
     {
         if (isDragging) return;
@@ -80,7 +76,7 @@ public class CardDraggable3D : MonoBehaviour
         if (isInHand)
         {
             isCurrentlyHovering = false;
-            if (handManager != null) handManager.ClearHoveredCard(gameObject);
+            handManager?.ClearHoveredCard(gameObject);
             PlayerHandCursor_3D.Instance?.NotifyHandHoverExit();
         }
         else
@@ -98,6 +94,14 @@ public class CardDraggable3D : MonoBehaviour
             Ray ray = cam.ScreenPointToRay(UnityEngine.InputSystem.Mouse.current.position.ReadValue());
             if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider != null && hit.collider.gameObject == gameObject)
             {
+                // IF THIS CARD IS STILL SITTING IN THE DECK STACK:
+                if (deckManager != null && deckManager.physicalCardStack.Contains(gameObject))
+                {
+                    // Trigger official deck draw logic so lists update 1-for-1!
+                    deckManager.OnDeckCardClicked(gameObject);
+                    return;
+                }
+
                 PrepareForDrag();
             }
         }
@@ -126,7 +130,9 @@ public class CardDraggable3D : MonoBehaviour
 
         PlayerHandCursor_3D.Instance?.NotifyCardPickedUp();
     }
+    #endregion
 
+    #region Dragging Movement & Release
     void HandleDraggingMovement()
     {
         if (PlayerHandCursor_3D.Instance != null)
@@ -135,18 +141,25 @@ public class CardDraggable3D : MonoBehaviour
             targetCardPos.y = 0.6f;
 
             float horizontalOffset = 0.63f;
-            float forwardOffset = 0.0f;
-
             targetCardPos -= PlayerHandCursor_3D.Instance.transform.right * horizontalOffset;
-            targetCardPos += PlayerHandCursor_3D.Instance.transform.forward * forwardOffset;
 
             transform.position = targetCardPos;
 
-            //THIS IS THE PROBLEM WITH THE CARDS INSTANT SWITCHING FIX SOON!!!!!!!!!!
-
+            // Get standard cursor rotation used for normal dragging
             Quaternion cursorRot = PlayerHandCursor_3D.Instance.transform.rotation;
             Quaternion pitchOffset = Quaternion.Euler(PlayerHandCursor_3D.Instance.dragPitchX, 0f, 0f);
-            transform.rotation = cursorRot * pitchOffset;
+            Quaternion normalDragRot = cursorRot * pitchOffset;
+
+            if (isFaceDown)
+            {
+                // Follow the hand rotation, but offset by 180 degrees to keep it face-down
+                transform.rotation = normalDragRot * Quaternion.Euler(0f, 180f, 0f);
+            }
+            else
+            {
+                // Normal right-side up rotation
+                transform.rotation = normalDragRot;
+            }
         }
     }
 
@@ -161,143 +174,172 @@ public class CardDraggable3D : MonoBehaviour
     void EvaluateDropZone()
     {
         isDragging = false;
+        PlayerHandCursor_3D.Instance?.NotifyCardReleased();
 
+        // 1. Dropped back down into the hand area
         if (transform.position.z < -0.8f)
         {
             DropInHand();
             return;
         }
 
-        if (IsDroppedOnPile(out Vector3 targetDropPoint))
+        // 2. Dropped on or near the discard pile
+        if (IsDroppedOnPile())
         {
-            if (RuleManager_3D.Instance != null && RuleManager_3D.Instance.IsMoveLegal(cardData))
+            // Delegate the rule processing to RuleManager
+            if (RuleManager_3D.Instance != null)
             {
-                ExecuteLegalDropOnPile();
-            }
-            else
-            {
-                ExecuteIllegalDrop("Digger die Karte ísses halt einfach nicht");
+                RuleManager_3D.Instance.HandleCardDroppedOnPile(cardData, gameObject);
             }
             return;
         }
 
-        ExecuteIllegalDrop("Bruder leg doch auf den ablagestapel");
+        // 3. Dropped somewhere else on the table illegally
+        if (RuleManager_3D.Instance != null)
+        {
+            RuleManager_3D.Instance.HandleIllegalTableDrop(cardData, gameObject);
+        }
     }
 
-    bool IsDroppedOnPile(out Vector3 targetDropPoint)
+    bool IsDroppedOnPile()
     {
-        targetDropPoint = transform.position;
-        if (pileManager == null && RuleManager_3D.Instance != null) pileManager = RuleManager_3D.Instance.pileManager;
+        if (pileManager == null && RuleManager_3D.Instance != null)
+            pileManager = RuleManager_3D.Instance.pileManager;
 
         if (pileManager != null)
         {
-            float distance = Vector3.Distance(new Vector3(transform.position.x, 0, transform.position.z), new Vector3(pileManager.transform.position.x, 0, pileManager.transform.position.z));
-            if (distance < 1.5f)
-            {
-                targetDropPoint = pileManager.transform.position;
-                return true;
-            }
+            float distance = Vector3.Distance(
+                new Vector3(transform.position.x, 0, transform.position.z),
+                new Vector3(pileManager.transform.position.x, 0, pileManager.transform.position.z)
+            );
+            return distance < 1.5f;
         }
         return false;
     }
+    #endregion
 
+    #region Hand & Flip Actions
     void DropInHand()
     {
         DisablePhysics();
         handManager?.AddCardToHand(gameObject);
-        PlayerHandCursor_3D.Instance?.NotifyCardReleased();
-
-        if (isIllegalOnTable)
-        {
-            isIllegalOnTable = false;
-            TurnManager_3D.Instance?.ResolveIllegalCardOnTable();
-        }
 
         if (isFaceDown)
         {
-            StartCoroutine(FlipToFaceUpRoutine());
+            StartCoroutine(AnimateDrawToHandRoutine());
         }
         else
         {
+            // Standard drop handling for cards already in hand
+            CardAnimation_3D anim = GetComponent<CardAnimation_3D>();
             Quaternion targetRot = Quaternion.Euler(0f, transform.rotation.eulerAngles.y, 0f);
-            transform.rotation = targetRot;
-            if (cardCollider != null) cardCollider.enabled = true;
+
+            if (anim != null)
+            {
+                anim.PlayTween(transform.position, targetRot, 0.2f, () => {
+                    if (cardCollider != null) cardCollider.enabled = true;
+                });
+            }
+            else
+            {
+                transform.rotation = targetRot;
+                if (cardCollider != null) cardCollider.enabled = true;
+            }
         }
     }
 
-    private IEnumerator FlipToFaceUpRoutine()
+    private IEnumerator AnimateDrawToHandRoutine()
     {
         isFlipping = true;
         isFaceDown = false;
 
+        // 1. Capture starting state right where the player dropped it
+        Vector3 startPos = transform.position;
         Quaternion startRot = transform.rotation;
-        Quaternion targetRot = Quaternion.Euler(0f, transform.rotation.eulerAngles.y, 0f);
+        Vector3 startScale = transform.localScale;
 
-        float duration = 0.3f; // Smooth flip duration in seconds
+        // 2. Figure out where the hand manager WANTS this card to end up by querying the layout math
+        // (We can temporarily let hand manager evaluate the target position for this card)
+        Vector3 targetPos = startPos;
+        Quaternion targetRot = Quaternion.identity;
+        Vector3 targetScale = startScale;
+
+        if (handManager != null)
+        {
+            // Find our index in the hand list
+            int index = handManager.currentHandCards.IndexOf(gameObject);
+            int totalCards = handManager.currentHandCards.Count;
+
+            if (index != -1 && totalCards > 0)
+            {
+                // Replicate the hand layout calculation to find our exact final slot
+                // (Matches your CalculateSpread and HandAreaAnchor logic from HandManager_3D)
+                float currentSpread = handManager.widthSpread;
+                if (totalCards > 1)
+                {
+                    float totalCalculatedWidth = (totalCards - 1) * handManager.widthSpread;
+                    currentSpread = totalCalculatedWidth > handManager.maxHandWidth ? handManager.maxHandWidth / (totalCards - 1) : handManager.widthSpread;
+                }
+
+                float xOffset = (index - (totalCards - 1) / 2.0f) * currentSpread;
+                float yOffset = handManager.baseHeightY + (index * handManager.layerOffsetY);
+                float zOffset = 0f;
+
+                if (handManager.handAreaAnchor != null)
+                {
+                    Vector3 localPos = new Vector3(xOffset, yOffset, zOffset);
+                    targetPos = handManager.handAreaAnchor.position + handManager.handAreaAnchor.TransformDirection(localPos);
+
+                    float rotationAngle = -xOffset * 12f;
+                    Quaternion localRot = Quaternion.Euler(60f, 0f, rotationAngle);
+                    // Final upright rotation matching hand fan
+                    targetRot = handManager.handAreaAnchor.rotation * localRot;
+                }
+                else
+                {
+                    targetPos = new Vector3(xOffset, yOffset, -1.5f + zOffset);
+                    float rotationAngle = -xOffset * 12f;
+                    targetRot = Quaternion.Euler(60f, 0f, rotationAngle);
+                }
+            }
+        }
+
+        // 3. Lerp everything smoothly over 0.3 seconds
+        float duration = 0.3f;
         float elapsed = 0f;
 
         while (elapsed < duration)
         {
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
-            transform.rotation = Quaternion.Slerp(startRot, targetRot, t);
+
+            // Smooth ease-out curve for motion
+            float smoothT = Mathf.Sin(t * Mathf.PI * 0.5f);
+
+            transform.position = Vector3.Lerp(startPos, targetPos, smoothT);
+            transform.rotation = Quaternion.Slerp(startRot, targetRot, smoothT);
+
             yield return null;
         }
 
+        transform.position = targetPos;
         transform.rotation = targetRot;
+
         isFlipping = false;
         if (cardCollider != null) cardCollider.enabled = true;
     }
+    #endregion
 
-    void ExecuteLegalDropOnPile()
-    {
-        handManager?.RemoveCardFromHand(gameObject);
-        PlayerHandCursor_3D.Instance?.NotifyCardReleased();
-
-        if (RuleManager_3D.Instance != null && cardData != null)
-        {
-            RuleManager_3D.Instance.player1Hand.Remove(cardData);
-            RuleManager_3D.Instance.ResetFreeTurn();
-        }
-
-        pileManager?.AddCardToPile(cardData, gameObject);
-        transform.rotation = Quaternion.Euler(90, Random.Range(-10f, 10f), 0);
-        EnablePhysics();
-
-        TurnManager_3D.Instance?.OnPlayerCompletedMove();
-        Destroy(this);
-    }
-
-    void ExecuteIllegalDrop(string message)
-    {
-        OpponentDialogueManager_3D.Instance?.ShowComplaint(message);
-        EnemyAI_3D.Instance?.RecordPlayerMistake();
-        handManager?.RemoveCardFromHand(gameObject);
-        PlayerHandCursor_3D.Instance?.NotifyCardReleased();
-
-        if (RuleManager_3D.Instance != null && cardData != null)
-        {
-            RuleManager_3D.Instance.player1Hand.Remove(cardData);
-        }
-
-        if (!isIllegalOnTable)
-        {
-            isIllegalOnTable = true;
-            TurnManager_3D.Instance?.RegisterIllegalCardOnTable();
-        }
-
-        transform.rotation = Quaternion.Euler(90, Random.Range(-10f, 10f), 0);
-        EnablePhysics();
-    }
-
-    void EnablePhysics()
+    #region Physics Helpers
+    public void EnablePhysics()
     {
         if (cardCollider != null) cardCollider.enabled = true;
         if (rb != null) { rb.isKinematic = false; rb.useGravity = true; }
     }
 
-    void DisablePhysics()
+    public void DisablePhysics()
     {
         if (rb != null) { rb.isKinematic = true; rb.useGravity = false; }
     }
+    #endregion
 }

@@ -11,12 +11,13 @@ public class EnemyHandManager_3D : MonoBehaviour
     [Header("Enemy Hand Layout Settings")]
     public float widthSpread = 0.5f;
     public float maxHandWidth = 4.0f;
-    public float baseHeightY = 0.8f; // Etwas höher auf dem Tisch
-    public float baseZPos = 2.5f;    // Auf der Gegnerseite (weiter weg von der Kamera)
+    public float baseHeightY = 0.8f;
+    public float baseZPos = 2.5f;
     public float layerOffsetY = 0.015f;
     public float smoothSpeed = 12f;
 
-    private List<GameObject> enemyHandCards = new List<GameObject>();
+    public List<GameObject> enemyHandCards = new List<GameObject>();
+    private List<Card> enemyCardDatas = new List<Card>();
     private Vector3 defaultCardScale = Vector3.one;
 
     private void Start()
@@ -52,7 +53,6 @@ public class EnemyHandManager_3D : MonoBehaviour
             float zPos = baseZPos;
 
             Vector3 targetPos = new Vector3(xPos, yPos, zPos);
-            // Gegner-Karten leicht zum Tisch/Spieler geneigt
             Quaternion targetRot = Quaternion.Euler(75f, 180f, xPos * 10f);
 
             CardAnimation_3D anim = card.GetComponent<CardAnimation_3D>();
@@ -68,9 +68,6 @@ public class EnemyHandManager_3D : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Instanziiert eine visuelle Karte für die Gegnerhand (z.B. für Strafen) und fügt sie dem Fächer hinzu.
-    /// </summary>
     public void AddCardVisual(Card cardData)
     {
         if (cardPrefab == null) return;
@@ -79,52 +76,31 @@ public class EnemyHandManager_3D : MonoBehaviour
         GameObject cardObj = Instantiate(cardPrefab, spawnPos, Quaternion.Euler(75f, 180f, 0f));
 
         Card3DViewTest cardView = cardObj.GetComponent<Card3DViewTest>();
-        if (cardView != null)
-        {
-            cardView.SetupCard(cardData);
-        }
+        cardView?.SetupCard(cardData);
 
-        // Gegner-Karten sind KI-gesteuert, daher brauchen sie kein Drag-Skript
         CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
-        if (draggable != null)
-        {
-            Destroy(draggable);
-        }
+        if (draggable != null) Destroy(draggable);
 
         Collider col = cardObj.GetComponent<Collider>();
         if (col != null) col.enabled = false;
 
         enemyHandCards.Add(cardObj);
+        enemyCardDatas.Add(cardData);
     }
 
-    /// <summary>
-    /// Integriert eine bereits existierende physische Karte (vom Deck-Stapel gezogen) in die Gegnerhand.
-    /// </summary>
     public void AddExistingCardVisual(GameObject cardObj, Card cardData)
     {
         if (cardObj == null) return;
 
         Card3DViewTest cardView = cardObj.GetComponent<Card3DViewTest>();
-        if (cardView != null)
-        {
-            cardView.SetupCard(cardData);
-        }
+        cardView?.SetupCard(cardData);
 
-        // Entferne Player-Draggable-Komponenten, da es nun dem Gegner gehört
         CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
-        if (draggable != null)
-        {
-            Destroy(draggable);
-        }
+        if (draggable != null) Destroy(draggable);
 
-        // Collider deaktivieren, damit Gegner-Karten keine Maus-Raycasts abfangen
         Collider col = cardObj.GetComponent<Collider>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
+        if (col != null) col.enabled = false;
 
-        // Physik einfrieren, während sie im Hand-Fächer liegt
         Rigidbody rb = cardObj.GetComponent<Rigidbody>();
         if (rb != null)
         {
@@ -132,37 +108,60 @@ public class EnemyHandManager_3D : MonoBehaviour
             rb.useGravity = false;
         }
 
-        enemyHandCards.Add(cardObj);
+        if (!enemyHandCards.Contains(cardObj))
+        {
+            enemyHandCards.Add(cardObj);
+            enemyCardDatas.Add(cardData);
+        }
     }
 
-    /// <summary>
-    /// Entfernt eine visuelle Karte aus der Gegnerhand (z.B. beim Ausspielen).
-    /// </summary>
     public void RemoveCardVisual(int index)
     {
         if (index >= 0 && index < enemyHandCards.Count)
         {
-            GameObject cardObj = enemyHandCards[index];
+            // ONLY unreference from lists so the card object can safely tween to the pile.
+            // DO NOT destroy the GameObject here!
             enemyHandCards.RemoveAt(index);
-            if (cardObj != null)
+
+            if (index < enemyCardDatas.Count)
             {
-                Destroy(cardObj);
+                enemyCardDatas.RemoveAt(index);
             }
         }
     }
 
-    /// <summary>
-    /// Zerstört alle visuellen Handkarten des Gegners (wird bei Strafen aufgerufen).
-    /// </summary>
     public void ClearAllVisuals()
     {
         foreach (GameObject cardObj in enemyHandCards)
         {
-            if (cardObj != null)
-            {
-                Destroy(cardObj);
-            }
+            if (cardObj != null) Destroy(cardObj);
         }
         enemyHandCards.Clear();
+        enemyCardDatas.Clear();
+    }
+
+    public List<Card> GetEnemyHandCardData()
+    {
+        // SELF-HEALING SANITY CHECK: Prune any null visual references automatically
+        for (int i = enemyHandCards.Count - 1; i >= 0; i--)
+        {
+            if (enemyHandCards[i] == null)
+            {
+                enemyHandCards.RemoveAt(i);
+                if (i < enemyCardDatas.Count) enemyCardDatas.RemoveAt(i);
+            }
+        }
+
+        // Hard sync safeguard: Truncate trailing ghost data entries if counts mismatch
+        if (enemyCardDatas.Count != enemyHandCards.Count)
+        {
+            Debug.LogWarning($"[EnemyHandManager] Desync detected! Visuals: {enemyHandCards.Count}, Data: {enemyCardDatas.Count}. Auto-syncing...");
+            while (enemyCardDatas.Count > enemyHandCards.Count)
+            {
+                enemyCardDatas.RemoveAt(enemyCardDatas.Count - 1);
+            }
+        }
+
+        return new List<Card>(enemyCardDatas);
     }
 }

@@ -28,13 +28,14 @@ public class PenaltyPile_3D : MonoBehaviour
 
     private void OnMouseEnter()
     {
-        if (isPlayer1Pile && RuleManager_3D.Instance != null)
+        if (isPlayer1Pile && RuleManager_3D.Instance != null && HandManager_3D.Instance != null)
         {
             bool isDeckEmpty = RuleManager_3D.Instance.deckManager != null && !RuleManager_3D.Instance.deckManager.HasCards();
             bool hasPenaltyCards = RuleManager_3D.Instance.player1PenaltyPile.Count > 0;
+            int handCount = HandManager_3D.Instance.GetPlayerHandCardData().Count;
 
             // Hover when valid to draw from penalty pile in Phase 2
-            if (isDeckEmpty && hasPenaltyCards && RuleManager_3D.Instance.player1Hand.Count < 3)
+            if (isDeckEmpty && hasPenaltyCards && handCount < 3)
             {
                 PlayerHandCursor_3D.Instance?.NotifyHoverEnter();
             }
@@ -93,35 +94,33 @@ public class PenaltyPile_3D : MonoBehaviour
         bool isDeckEmpty = RuleManager_3D.Instance.deckManager != null && !RuleManager_3D.Instance.deckManager.HasCards();
         bool hasPenaltyCards = RuleManager_3D.Instance.player1PenaltyPile.Count > 0;
 
-        if (isDeckEmpty)
+        HandManager_3D handManager = HandManager_3D.Instance != null ? HandManager_3D.Instance : Object.FindAnyObjectByType<HandManager_3D>();
+        int handCount = handManager != null ? handManager.GetPlayerHandCardData().Count : 0;
+        List<Card> playerHand = handManager != null ? handManager.GetPlayerHandCardData() : new List<Card>();
+
+        // RULE: If hand count is less than 3, drawing is mandatory. 
+        // If deck is empty, draw from penalty pile immediately!
+        if (handCount < 3)
         {
-            if (hasPenaltyCards && RuleManager_3D.Instance != null && RuleManager_3D.Instance.player1Hand.Count < 3)
+            if (isDeckEmpty && hasPenaltyCards)
             {
-                HandManager_3D handManager = Object.FindAnyObjectByType<HandManager_3D>();
                 handManager?.TryDrawCardOrFromPenalty();
                 return;
             }
-
-            List<Card> legalMoves = RuleManager_3D.Instance.GetLegalMoves(RuleManager_3D.Instance.player1Hand);
-            if (legalMoves.Count == 0)
+            else if (!isDeckEmpty)
             {
-                RuleManager_3D.Instance.TriggerPenaltyClickAction();
-                return;
-            }
-            else
-            {
-                OpponentDialogueManager_3D.Instance?.ShowComplaint("Du hast noch gültige Karten auf der Hand!");
+                Debug.Log("Bitte ziehe vom Hauptstapel nach! (Hand hat weniger als 3 Karten)");
                 return;
             }
         }
 
-        List<Card> phase1LegalMoves = RuleManager_3D.Instance.GetLegalMoves(RuleManager_3D.Instance.player1Hand);
-
-        if (phase1LegalMoves.Count == 0)
+        // If hand is full (3 cards) and you have NO legal moves, then clicking penalty pile means you take the penalty pile into your hand
+        List<Card> legalMoves = RuleManager_3D.Instance.GetLegalMoves(playerHand);
+        if (handCount >= 3 && legalMoves.Count == 0)
         {
             RuleManager_3D.Instance.TriggerPenaltyClickAction();
         }
-        else
+        else if (legalMoves.Count > 0)
         {
             OpponentDialogueManager_3D.Instance?.ShowComplaint("Du hast noch gültige Karten auf der Hand!");
         }
