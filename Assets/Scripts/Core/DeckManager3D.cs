@@ -45,7 +45,6 @@ public class DeckManager_3D : MonoBehaviour
             }
         }
 
-        // Shuffle deck data list
         for (int i = 0; i < deck.Count; i++)
         {
             Card temp = deck[i];
@@ -54,7 +53,6 @@ public class DeckManager_3D : MonoBehaviour
             deck[randomIndex] = temp;
         }
 
-        // Spawn physical cards matching the exact order of the deck list
         for (int i = deck.Count - 1; i >= 0; i--)
         {
             Card cardData = deck[i];
@@ -99,41 +97,42 @@ public class DeckManager_3D : MonoBehaviour
         }
         return success;
     }
+
     public void OnDeckCardClicked(GameObject clickedCardObj)
     {
-        if (TurnManager_3D.Instance != null && !TurnManager_3D.Instance.CanPlayerDrawCard())
+        int handCount = handManager != null ? handManager.GetPlayerHandCardData().Count : -1;
+        bool canDraw = TurnManager_3D.Instance != null && TurnManager_3D.Instance.CanPlayerDrawCard();
+
+        if (!canDraw)
         {
-            OpponentDialogueManager_3D.Instance?.ShowComplaint("Du musst jetzt nicht nachziehen!");
+            EnemyReactionManager_3D.Instance?.TriggerReaction(EnemyReactionManager_3D.EnemyEventType.RefuseToDraw);
             return;
         }
 
-        if (handManager != null && handManager.GetPlayerHandCardData().Count >= 3)
+        if (handCount >= 3)
         {
-            Debug.Log("Du hast bereits 3 Karten auf der Hand!");
+            EnemyReactionManager_3D.Instance?.TriggerReaction(EnemyReactionManager_3D.EnemyEventType.TryDrawWithFullHand);
             return;
         }
 
-        // Find where this card is in our physical stack
-        int index = physicalCardStack.IndexOf(clickedCardObj);
-        if (index != -1)
+        if (TryDrawCardObject(out Card drawnCard, out GameObject cardObj))
         {
-            // Remove data and physical reference atomically
-            Card drawnCard = deck[index];
-            deck.RemoveAt(index);
-            physicalCardStack.RemoveAt(index);
-
-            // Unparent and send to hand
-            clickedCardObj.transform.SetParent(null);
-            handManager.AddExistingCardVisual(clickedCardObj, drawnCard);
-
-            CardDraggable3D draggable = clickedCardObj.GetComponent<CardDraggable3D>();
-            if (draggable != null)
+            if (handManager != null && cardObj != null)
             {
-                draggable.SetFaceDown(true);
-                draggable.StartDraggingImmediately();
+                handManager.AddExistingCardVisual(cardObj, drawnCard);
+
+                CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
+                if (draggable != null)
+                {
+                    draggable.SetFaceDown(true);
+                    draggable.StartDraggingImmediately();
+                }
+
+                TurnManager_3D.Instance?.OnCardDrawn();
             }
         }
     }
+
     public bool TryDrawCardObject(out Card drawnCard, out GameObject cardObj)
     {
         drawnCard = null;
@@ -141,11 +140,9 @@ public class DeckManager_3D : MonoBehaviour
 
         if (HasCards())
         {
-            // 1. Remove the top card data from the synced list
             drawnCard = deck[0];
             deck.RemoveAt(0);
 
-            // 2. Pull the exact top physical card object from index 0
             while (physicalCardStack.Count > 0)
             {
                 GameObject candidate = physicalCardStack[0];
@@ -162,7 +159,6 @@ public class DeckManager_3D : MonoBehaviour
                 break;
             }
 
-            // Unparent from deck hierarchy so it is officially out of the deck
             if (cardObj != null)
             {
                 cardObj.transform.SetParent(null);
@@ -180,22 +176,20 @@ public class DeckManager_3D : MonoBehaviour
     {
         if (TurnManager_3D.Instance != null && !TurnManager_3D.Instance.CanPlayerDrawCard())
         {
-            OpponentDialogueManager_3D.Instance?.ShowComplaint("Du musst jetzt nicht nachziehen!");
+            EnemyReactionManager_3D.Instance?.TriggerReaction(EnemyReactionManager_3D.EnemyEventType.RefuseToDraw);
             return;
         }
 
         if (handManager != null && handManager.GetPlayerHandCardData().Count >= 3)
         {
-            Debug.Log("Du hast bereits 3 Karten auf der Hand!");
+            EnemyReactionManager_3D.Instance?.TriggerReaction(EnemyReactionManager_3D.EnemyEventType.TryDrawWithFullHand);
             return;
         }
 
-        // Pull the exact existing physical card from the top of the stack
         if (TryDrawCardObject(out Card cardData, out GameObject cardObj))
         {
             if (handManager != null && cardObj != null)
             {
-                // Reassign the existing physical card object directly to the player's hand (Zero instantiation!)
                 handManager.AddExistingCardVisual(cardObj, cardData);
 
                 CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
@@ -205,10 +199,6 @@ public class DeckManager_3D : MonoBehaviour
                     draggable.StartDraggingImmediately();
                 }
             }
-        }
-        else
-        {
-            Debug.Log("Der Nachziehstapel ist leer!");
         }
     }
     #endregion

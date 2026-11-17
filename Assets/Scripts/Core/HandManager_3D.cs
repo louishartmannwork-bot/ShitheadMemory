@@ -85,7 +85,6 @@ public class HandManager_3D : MonoBehaviour
         {
             currentHandCards.Add(cardObj);
         }
-        TurnManager_3D.Instance?.OnCardAddedToHand();
     }
 
     public void RemoveCardFromHand(GameObject cardObj)
@@ -188,16 +187,10 @@ public class HandManager_3D : MonoBehaviour
         if (cardObj == null) return;
 
         Card3DViewTest cardView = cardObj.GetComponent<Card3DViewTest>();
-        if (cardView != null)
-        {
-            cardView.SetupCard(cardData);
-        }
+        cardView?.SetupCard(cardData);
 
         CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
-        if (draggable == null)
-        {
-            draggable = cardObj.AddComponent<CardDraggable3D>();
-        }
+        if (draggable == null) draggable = cardObj.AddComponent<CardDraggable3D>();
 
         draggable.Init(this, deckManager, cardData);
         draggable.cardData = cardData;
@@ -217,65 +210,32 @@ public class HandManager_3D : MonoBehaviour
 
     public void TryDrawCardOrFromPenalty()
     {
-        // Consult TurnManager authoritative check
-        if (TurnManager_3D.Instance != null && !TurnManager_3D.Instance.CanPlayerDrawCard())
-        {
-            Debug.Log("Kann aktuell keine Karte nachziehen.");
-            return;
-        }
+        bool isDeckEmpty = RuleManager_3D.Instance != null &&
+                           RuleManager_3D.Instance.deckManager != null &&
+                           !RuleManager_3D.Instance.deckManager.HasCards();
 
-        // 1. Try drawing from unified deck stack first
-        if (deckManager != null && deckManager.HasCards())
+        bool hasPenaltyCards = RuleManager_3D.Instance != null &&
+                               RuleManager_3D.Instance.player1PenaltyPile.Count > 0;
+
+        if (isDeckEmpty && hasPenaltyCards)
         {
-            if (deckManager.TryDrawCardObject(out Card drawnCard, out GameObject cardObj))
+            if (RuleManager_3D.Instance.TryDrawFromPenaltyPile(true, out Card penaltyCard, out GameObject physicalCardObj))
             {
-                if (cardObj != null)
+                if (physicalCardObj != null)
                 {
-                    AddExistingCardVisual(cardObj, drawnCard);
-                    CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
+                    AddExistingCardVisual(physicalCardObj, penaltyCard);
+
+                    CardDraggable3D draggable = physicalCardObj.GetComponent<CardDraggable3D>();
                     if (draggable != null)
                     {
                         draggable.SetFaceDown(true);
+                        draggable.StartDraggingImmediately();
                     }
 
-                    TurnManager_3D.Instance?.OnCardAddedToHand();
-                    return;
+                    TurnManager_3D.Instance?.OnCardDrawn();
                 }
             }
         }
-
-        // 2. If deck is empty, draw from Player 1 Penalty Pile
-        if (RuleManager_3D.Instance != null && RuleManager_3D.Instance.player1PenaltyPile.Count > 0)
-        {
-            List<Card> penaltyPile = RuleManager_3D.Instance.player1PenaltyPile;
-            int lastIndex = penaltyPile.Count - 1;
-            Card penaltyCard = penaltyPile[lastIndex];
-            penaltyPile.RemoveAt(lastIndex);
-
-            Transform spawnPoint = RuleManager_3D.Instance.player1PenaltySpawnPoint;
-            if (spawnPoint != null && spawnPoint.childCount > 0)
-            {
-                Transform topCardObj = spawnPoint.GetChild(spawnPoint.childCount - 1);
-                Destroy(topCardObj.gameObject);
-            }
-
-            Vector3 spawnPos = spawnPoint != null ? spawnPoint.position + Vector3.up * 0.2f : new Vector3(1.4f, 0.4f, 0f);
-            GameObject spawnedCardObj = Instantiate(cardPrefab, spawnPos, Quaternion.Euler(75f, 0f, 0f));
-            spawnedCardObj.GetComponent<Card3DViewTest>()?.SetupCard(penaltyCard);
-
-            CardDraggable3D draggableComp = spawnedCardObj.GetComponent<CardDraggable3D>();
-            if (draggableComp != null)
-            {
-                draggableComp.Init(this, deckManager, penaltyCard);
-                draggableComp.cardData = penaltyCard;
-                currentHandCards.Add(spawnedCardObj);
-            }
-
-            TurnManager_3D.Instance?.OnCardAddedToHand();
-            return;
-        }
-
-        Debug.Log("Keine Karten mehr zum Nachziehen vorhanden!");
     }
     #endregion
 }

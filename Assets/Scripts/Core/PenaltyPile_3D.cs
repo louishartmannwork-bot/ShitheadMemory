@@ -34,7 +34,6 @@ public class PenaltyPile_3D : MonoBehaviour
             bool hasPenaltyCards = RuleManager_3D.Instance.player1PenaltyPile.Count > 0;
             int handCount = HandManager_3D.Instance.GetPlayerHandCardData().Count;
 
-            // Hover when valid to draw from penalty pile in Phase 2
             if (isDeckEmpty && hasPenaltyCards && handCount < 3)
             {
                 PlayerHandCursor_3D.Instance?.NotifyHoverEnter();
@@ -89,8 +88,6 @@ public class PenaltyPile_3D : MonoBehaviour
             return;
         }
 
-        RuleManager_3D.Instance.isPlayer1Turn = true;
-
         bool isDeckEmpty = RuleManager_3D.Instance.deckManager != null && !RuleManager_3D.Instance.deckManager.HasCards();
         bool hasPenaltyCards = RuleManager_3D.Instance.player1PenaltyPile.Count > 0;
 
@@ -98,13 +95,25 @@ public class PenaltyPile_3D : MonoBehaviour
         int handCount = handManager != null ? handManager.GetPlayerHandCardData().Count : 0;
         List<Card> playerHand = handManager != null ? handManager.GetPlayerHandCardData() : new List<Card>();
 
-        // RULE: If hand count is less than 3, drawing is mandatory. 
-        // If deck is empty, draw from penalty pile immediately!
         if (handCount < 3)
         {
             if (isDeckEmpty && hasPenaltyCards)
             {
                 handManager?.TryDrawCardOrFromPenalty();
+                return;
+            }
+            else if (isDeckEmpty && !hasPenaltyCards)
+            {
+                // Trigger penalty logic here (using a unique local variable name to avoid scoping conflict)
+                List<Card> stuckLegalMoves = RuleManager_3D.Instance.GetLegalMoves(playerHand);
+                if (stuckLegalMoves.Count == 0)
+                {
+                    RuleManager_3D.Instance.TriggerPenaltyClickAction();
+                }
+                else
+                {
+                    OpponentDialogueManager_3D.Instance?.ShowComplaint("Du hast noch gültige Karten auf der Hand!");
+                }
                 return;
             }
             else if (!isDeckEmpty)
@@ -114,15 +123,9 @@ public class PenaltyPile_3D : MonoBehaviour
             }
         }
 
-        // If hand is full (3 cards) and you have NO legal moves, then clicking penalty pile means you take the penalty pile into your hand
-        List<Card> legalMoves = RuleManager_3D.Instance.GetLegalMoves(playerHand);
-        if (handCount >= 3 && legalMoves.Count == 0)
+        if (handCount >= 3)
         {
             RuleManager_3D.Instance.TriggerPenaltyClickAction();
-        }
-        else if (legalMoves.Count > 0)
-        {
-            OpponentDialogueManager_3D.Instance?.ShowComplaint("Du hast noch gültige Karten auf der Hand!");
         }
     }
 }

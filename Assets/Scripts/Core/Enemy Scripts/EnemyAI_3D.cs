@@ -1,6 +1,7 @@
-using UnityEngine;
 using ShitheadMemory;
+using System.Collections;
 using System.Collections.Generic;
+using UnityEngine;
 
 public class EnemyAI_3D : MonoBehaviour
 {
@@ -31,7 +32,6 @@ public class EnemyAI_3D : MonoBehaviour
         if (deckManager == null || enemyHandManager == null) return;
         for (int i = 0; i < 3; i++)
         {
-            // Use TryDrawCardObject to pull a pre-spawned physical card from the deck stack
             if (deckManager.TryDrawCardObject(out Card drawnCard, out GameObject cardObj))
             {
                 if (cardObj != null)
@@ -41,45 +41,48 @@ public class EnemyAI_3D : MonoBehaviour
             }
         }
     }
-
-    public void RecordPlayerMistake()
-    {
-        playerMistakes++;
-        if (playerMistakes >= maxMistakes)
-        {
-            OpponentDialogueManager_3D.Instance?.ShowComplaint("Junge kannst du nich nach den regeln spielen? ich hab kein bock mehr");
-            TurnManager_3D.Instance?.SetGameOver();
-            Time.timeScale = 0f;
-        }
-    }
-
     public void PlayTurn()
     {
         if (RuleManager_3D.Instance == null || enemyHandManager == null) return;
 
-        CheckAndDrawCards();
+        StartCoroutine(CheckAndDrawCardsRoutine(() => {
+            ExecuteEnemyMoveLogic();
+        }));
+    }
+
+    private void ExecuteEnemyMoveLogic()
+    {
         List<Card> currentHand = enemyHandManager.GetEnemyHandCardData();
         List<Card> legalMoves = RuleManager_3D.Instance.GetLegalMoves(currentHand);
 
         if (legalMoves.Count > 0)
         {
-            // Normal turn: Play lowest legal card
             Card cardToPlay = ChooseLowestLegalCard(legalMoves);
+
             PlayCard(cardToPlay);
-            CheckAndDrawCards();
-            TurnManager_3D.Instance?.ScheduleEndEnemyTurn(0.8f);
+
+            StartCoroutine(CheckAndDrawCardsRoutine(() => {
+
+                int remainingHandCount = enemyHandManager.GetEnemyHandCardData().Count;
+                bool deckEmpty = RuleManager_3D.Instance.deckManager != null && !RuleManager_3D.Instance.deckManager.HasCards();
+                bool penaltyEmpty = RuleManager_3D.Instance.player2PenaltyPile.Count == 0;
+
+                if (deckEmpty && remainingHandCount == 0 && penaltyEmpty)
+                {
+                    Debug.Log("[WinCondition] ENEMY PLACED FINAL CARD AND WON!");
+                    TurnManager_3D.Instance?.CheckWinCondition();
+                }
+                else
+                {
+                    TurnManager_3D.Instance?.ScheduleEndEnemyTurn(0.8f);
+                }
+            }));
         }
         else
         {
-            OpponentDialogueManager_3D.Instance?.ShowComplaint("Ok dann kann ich halt nich man");
-
-            // Enemy has no legal moves, so they take the penalty!
-            // This clears the pile, wipes your hand into their penalty pile, and refills their hand.
             ExecuteEnemyPenalty();
-            CheckAndDrawCards();
 
-            // TAKE PENALTY ENDS THE TURN. Do NOT try to play another card here!
-            // Just hand control back to the player.
+            TurnManager_3D.Instance?.CheckWinCondition();
             TurnManager_3D.Instance?.ScheduleEndEnemyTurn(0.8f);
         }
     }
@@ -90,16 +93,18 @@ public class EnemyAI_3D : MonoBehaviour
         return legalMoves[0];
     }
 
-    private void PlayCard(Card card)
+    public void PlayCard(Card card)
     {
-        // 1. ABSOLUTE RULE CHECK: Refuse to play illegal cards even if chosen
-        if (RuleManager_3D.Instance != null && !RuleManager_3D.Instance.IsMoveLegal(card))
-        {
-            Debug.LogError($"[AI PlayCard] BLOCKED: AI tried to play illegal card {card.value}!");
-            return;
-        }
+        if (card == null) return;
 
         List<Card> currentHand = enemyHandManager.GetEnemyHandCardData();
+        List<Card> legalMoves = RuleManager_3D.Instance != null ? RuleManager_3D.Instance.GetLegalMoves(currentHand) : new List<Card>();
+
+        if (!legalMoves.Contains(card))
+        {
+            Debug.LogError($"[AI PlayCard] BLOCKED: AI tried to play illegal card {card.value} of {card.suit}!");
+            return;
+        }
         int index = currentHand.IndexOf(card);
 
         GameObject cardToPlayObj = null;
@@ -112,7 +117,6 @@ public class EnemyAI_3D : MonoBehaviour
         }
         else
         {
-            // Fallback search
             for (int i = 0; i < enemyHandManager.enemyHandCards.Count; i++)
             {
                 GameObject obj = enemyHandManager.enemyHandCards[i];
@@ -131,7 +135,6 @@ public class EnemyAI_3D : MonoBehaviour
             return;
         }
 
-        // Safely remove visual and data from enemy hand
         enemyHandManager.RemoveCardVisual(targetIndex);
         RuleManager_3D.Instance?.ResetFreeTurn();
 
@@ -141,7 +144,6 @@ public class EnemyAI_3D : MonoBehaviour
             Collider col = cardToPlayObj.GetComponent<Collider>();
             if (col != null) col.enabled = false;
 
-            // Use PileManager to handle the drop cleanly, maintaining proper discard state!
             if (anim != null)
             {
                 anim.PlayTween(pileManager.transform.position + new Vector3(0, 0.6f, 0), Quaternion.Euler(75f, Random.Range(-10f, 10f), 0f), 0.4f, () => {
@@ -157,7 +159,6 @@ public class EnemyAI_3D : MonoBehaviour
                         rb.useGravity = true;
                     }
 
-                    // This updates PileManager data and objects correctly so the discard state never corrupts!
                     pileManager.AddCardToPile(card, cardToPlayObj);
                 });
             }
@@ -167,69 +168,99 @@ public class EnemyAI_3D : MonoBehaviour
             }
         }
     }
-    private void CheckAndDrawCards()
+
+    public void CheckAndDrawCards()
     {
-        if (enemyHandManager == null) return;
+        StartCoroutine(CheckAndDrawCardsRoutine(null));
+    }
 
-        Debug.Log($"[AI CheckAndDrawCards] Current enemy hand count before draw: {enemyHandManager.GetEnemyHandCardData().Count}");
+    private IEnumerator CheckAndDrawCardsRoutine(System.Action onComplete)
+    {
+        if (enemyHandManager == null) yield break;
 
-        while (enemyHandManager.GetEnemyHandCardData().Count < 3)
+        int safetyCounter = 0;
+
+        while (enemyHandManager.GetEnemyHandCardData().Count < 3 && safetyCounter < 10)
         {
-            bool successfullyDrew = false;
+            safetyCounter++;
 
-            // 1. Try drawing from the main deck stack first
-            if (deckManager != null && deckManager.HasCards())
+            DeckManager_3D deckMgr = RuleManager_3D.Instance != null ? RuleManager_3D.Instance.deckManager : null;
+            if (deckMgr == null) deckMgr = FindAnyObjectByType<DeckManager_3D>();
+
+            bool deckHasCards = deckMgr != null && deckMgr.HasCards();
+            bool hasPenaltyCards = RuleManager_3D.Instance != null && RuleManager_3D.Instance.player2PenaltyPile.Count > 0;
+
+            if (!deckHasCards && !hasPenaltyCards)
             {
-                if (deckManager.TryDrawCardObject(out Card drawnCard, out GameObject cardObj))
-                {
-                    if (cardObj != null)
-                    {
-                        enemyHandManager.AddExistingCardVisual(cardObj, drawnCard);
-                        successfullyDrew = true;
-                        Debug.Log("[AI CheckAndDrawCards] Successfully drew card from deck.");
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning("[AI CheckAndDrawCards] DeckManager.HasCards() was true, but TryDrawCardObject failed!");
-                }
-            }
-            else
-            {
-                Debug.Log("[AI CheckAndDrawCards] Deck has no cards left.");
-            }
-
-            // 2. If deck is empty, draw from Enemy Penalty Pile (Player 2 Penalty Pile)
-            if (!successfullyDrew && RuleManager_3D.Instance != null && RuleManager_3D.Instance.player2PenaltyPile.Count > 0)
-            {
-                List<Card> penaltyPile = RuleManager_3D.Instance.player2PenaltyPile;
-                Card penaltyCard = penaltyPile[penaltyPile.Count - 1];
-                penaltyPile.RemoveAt(penaltyPile.Count - 1);
-
-                Transform spawnPoint = RuleManager_3D.Instance.player2PenaltySpawnPoint;
-                if (spawnPoint != null && spawnPoint.childCount > 0)
-                {
-                    Destroy(spawnPoint.GetChild(spawnPoint.childCount - 1).gameObject);
-                }
-
-                enemyHandManager.AddCardVisual(penaltyCard);
-                successfullyDrew = true;
-                Debug.Log("[AI CheckAndDrawCards] Drew card from enemy penalty pile.");
-            }
-
-            // If neither source has cards left, stop trying to prevent infinite loops
-            if (!successfullyDrew)
-            {
-                Debug.LogWarning("[AI CheckAndDrawCards] COULD NOT DRAW! Both deck and penalty pile failed or were empty.");
                 break;
             }
+
+            bool successfullyDrew = false;
+
+            if (deckHasCards)
+            {
+                if (deckMgr.deck != null && deckMgr.deck.Count > 0)
+                {
+                    int lastIdx = deckMgr.deck.Count - 1;
+                    Card drawnCard = deckMgr.deck[lastIdx];
+                    deckMgr.deck.RemoveAt(lastIdx);
+
+                    GameObject cardObj = null;
+                    if (deckMgr.physicalCardStack != null && deckMgr.physicalCardStack.Count > 0)
+                    {
+                        int physicalLastIdx = deckMgr.physicalCardStack.Count - 1;
+                        cardObj = deckMgr.physicalCardStack[physicalLastIdx];
+                        deckMgr.physicalCardStack.RemoveAt(physicalLastIdx);
+                        if (cardObj != null) cardObj.transform.SetParent(null);
+                    }
+
+                    if (cardObj == null && deckMgr.cardPrefab != null)
+                    {
+                        cardObj = Instantiate(deckMgr.cardPrefab);
+                    }
+
+                    if (cardObj != null)
+                    {
+                        cardObj.GetComponent<Card3DViewTest>()?.SetupCard(drawnCard);
+                        enemyHandManager.AddExistingCardVisual(cardObj, drawnCard);
+
+                        CardDraggable3D draggable = cardObj.GetComponent<CardDraggable3D>();
+                        if (draggable != null) draggable.SetFaceDown(false);
+
+                        successfullyDrew = true;
+                    }
+                }
+            }
+            else if (hasPenaltyCards)
+            {
+                if (RuleManager_3D.Instance.TryDrawFromPenaltyPile(false, out Card penaltyCard, out GameObject physicalCardObj))
+                {
+                    if (physicalCardObj != null)
+                    {
+                        enemyHandManager.AddExistingCardVisual(physicalCardObj, penaltyCard);
+
+                        CardDraggable3D draggable = physicalCardObj.GetComponent<CardDraggable3D>();
+                        if (draggable != null) draggable.SetFaceDown(false);
+
+                        successfullyDrew = true;
+                    }
+                }
+            }
+
+            if (!successfullyDrew)
+            {
+                break;
+            }
+
+            yield return new WaitForSeconds(0.2f);
         }
+
+        onComplete?.Invoke();
     }
 
     private void ExecuteEnemyPenalty()
     {
         if (RuleManager_3D.Instance == null) return;
-        RuleManager_3D.Instance.isPlayer1Turn = false;
         RuleManager_3D.Instance.TriggerPenaltyClickAction();
     }
 }

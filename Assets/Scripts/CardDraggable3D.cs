@@ -16,14 +16,12 @@ public class CardDraggable3D : MonoBehaviour
     private bool isDragging = false;
     private bool isCurrentlyHovering = false;
 
-    // --- FACE-DOWN & FLIP STATE ---
     public bool isFaceDown = false;
     private bool isFlipping = false;
     public bool IsFlipping => isFlipping;
+    public bool IsDragging => isDragging;
 
     public void SetFaceDown(bool faceDown) => isFaceDown = faceDown;
-    public bool IsDragging => isDragging;
-    // ----------------------------
 
     public void Init(HandManager_3D hand, DeckManager_3D deck, Card data)
     {
@@ -54,10 +52,7 @@ public class CardDraggable3D : MonoBehaviour
     private void OnMouseEnter()
     {
         if (isDragging) return;
-
-        bool isInHand = handManager != null && handManager.IsCardInHand(gameObject);
-
-        if (isInHand)
+        if (handManager != null && handManager.IsCardInHand(gameObject))
         {
             isCurrentlyHovering = true;
             handManager.SetHoveredCard(gameObject);
@@ -71,9 +66,7 @@ public class CardDraggable3D : MonoBehaviour
 
     private void OnMouseExit()
     {
-        bool isInHand = handManager != null && handManager.IsCardInHand(gameObject);
-
-        if (isInHand)
+        if (handManager != null && handManager.IsCardInHand(gameObject))
         {
             isCurrentlyHovering = false;
             handManager?.ClearHoveredCard(gameObject);
@@ -85,8 +78,6 @@ public class CardDraggable3D : MonoBehaviour
         }
     }
 
-    public void StartDraggingImmediately() => PrepareForDrag();
-
     void CheckForClickToDrag()
     {
         if (UnityEngine.InputSystem.Mouse.current.leftButton.wasPressedThisFrame)
@@ -94,11 +85,23 @@ public class CardDraggable3D : MonoBehaviour
             Ray ray = cam.ScreenPointToRay(UnityEngine.InputSystem.Mouse.current.position.ReadValue());
             if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider != null && hit.collider.gameObject == gameObject)
             {
-                // IF THIS CARD IS STILL SITTING IN THE DECK STACK:
                 if (deckManager != null && deckManager.physicalCardStack.Contains(gameObject))
                 {
-                    // Trigger official deck draw logic so lists update 1-for-1!
-                    deckManager.OnDeckCardClicked(gameObject);
+                    if (TurnManager_3D.Instance != null && TurnManager_3D.Instance.CanPlayerDraw())
+                    {
+                        deckManager.OnDeckCardClicked(gameObject);
+                        TurnManager_3D.Instance.OnCardDrawn();
+                    }
+                    else
+                    {
+                        OpponentDialogueManager_3D.Instance?.ShowComplaint("Du musst jetzt nicht nachziehen!");
+                    }
+                    return;
+                }
+
+                if (TurnManager_3D.Instance != null && !TurnManager_3D.Instance.CanPlayerPlayCard())
+                {
+                    OpponentDialogueManager_3D.Instance?.ShowComplaint("Zieh erst deine Karten nach!");
                     return;
                 }
 
@@ -122,8 +125,6 @@ public class CardDraggable3D : MonoBehaviour
         handManager?.OnCardPickedUp(gameObject);
         isDragging = true;
 
-        PlayerHandCursor_3D.Instance?.NotifyHandHoverExit();
-
         Vector3 pos = transform.position;
         pos.y = 0.6f;
         transform.position = pos;
@@ -139,27 +140,14 @@ public class CardDraggable3D : MonoBehaviour
         {
             Vector3 targetCardPos = PlayerHandCursor_3D.Instance.CardSnapPosition;
             targetCardPos.y = 0.6f;
-
-            float horizontalOffset = 0.63f;
-            targetCardPos -= PlayerHandCursor_3D.Instance.transform.right * horizontalOffset;
+            targetCardPos -= PlayerHandCursor_3D.Instance.transform.right * 0.63f;
 
             transform.position = targetCardPos;
 
-            // Get standard cursor rotation used for normal dragging
             Quaternion cursorRot = PlayerHandCursor_3D.Instance.transform.rotation;
-            Quaternion pitchOffset = Quaternion.Euler(PlayerHandCursor_3D.Instance.dragPitchX, 0f, 0f);
-            Quaternion normalDragRot = cursorRot * pitchOffset;
+            Quaternion normalDragRot = cursorRot * Quaternion.Euler(PlayerHandCursor_3D.Instance.dragPitchX, 0f, 0f);
 
-            if (isFaceDown)
-            {
-                // Follow the hand rotation, but offset by 180 degrees to keep it face-down
-                transform.rotation = normalDragRot * Quaternion.Euler(0f, 180f, 0f);
-            }
-            else
-            {
-                // Normal right-side up rotation
-                transform.rotation = normalDragRot;
-            }
+            transform.rotation = isFaceDown ? normalDragRot * Quaternion.Euler(0f, 180f, 0f) : normalDragRot;
         }
     }
 
@@ -176,29 +164,19 @@ public class CardDraggable3D : MonoBehaviour
         isDragging = false;
         PlayerHandCursor_3D.Instance?.NotifyCardReleased();
 
-        // 1. Dropped back down into the hand area
         if (transform.position.z < -0.8f)
         {
             DropInHand();
             return;
         }
 
-        // 2. Dropped on or near the discard pile
         if (IsDroppedOnPile())
         {
-            // Delegate the rule processing to RuleManager
-            if (RuleManager_3D.Instance != null)
-            {
-                RuleManager_3D.Instance.HandleCardDroppedOnPile(cardData, gameObject);
-            }
+            RuleManager_3D.Instance?.HandleCardDroppedOnPile(cardData, gameObject);
             return;
         }
 
-        // 3. Dropped somewhere else on the table illegally
-        if (RuleManager_3D.Instance != null)
-        {
-            RuleManager_3D.Instance.HandleIllegalTableDrop(cardData, gameObject);
-        }
+        RuleManager_3D.Instance?.HandleIllegalTableDrop(cardData, gameObject);
     }
 
     bool IsDroppedOnPile()
@@ -230,7 +208,6 @@ public class CardDraggable3D : MonoBehaviour
         }
         else
         {
-            // Standard drop handling for cards already in hand
             CardAnimation_3D anim = GetComponent<CardAnimation_3D>();
             Quaternion targetRot = Quaternion.Euler(0f, transform.rotation.eulerAngles.y, 0f);
 
@@ -247,33 +224,37 @@ public class CardDraggable3D : MonoBehaviour
             }
         }
     }
+    public void ReturnToHand()
+    {
+        isDragging = false;
+        PlayerHandCursor_3D.Instance?.NotifyCardReleased();
 
+        if (handManager != null)
+        {
+            handManager.AddCardToHand(gameObject);
+        }
+        else
+        {
+            EnablePhysics();
+        }
+    }
     private IEnumerator AnimateDrawToHandRoutine()
     {
         isFlipping = true;
         isFaceDown = false;
 
-        // 1. Capture starting state right where the player dropped it
         Vector3 startPos = transform.position;
         Quaternion startRot = transform.rotation;
-        Vector3 startScale = transform.localScale;
-
-        // 2. Figure out where the hand manager WANTS this card to end up by querying the layout math
-        // (We can temporarily let hand manager evaluate the target position for this card)
         Vector3 targetPos = startPos;
         Quaternion targetRot = Quaternion.identity;
-        Vector3 targetScale = startScale;
 
         if (handManager != null)
         {
-            // Find our index in the hand list
             int index = handManager.currentHandCards.IndexOf(gameObject);
             int totalCards = handManager.currentHandCards.Count;
 
             if (index != -1 && totalCards > 0)
             {
-                // Replicate the hand layout calculation to find our exact final slot
-                // (Matches your CalculateSpread and HandAreaAnchor logic from HandManager_3D)
                 float currentSpread = handManager.widthSpread;
                 if (totalCards > 1)
                 {
@@ -283,28 +264,22 @@ public class CardDraggable3D : MonoBehaviour
 
                 float xOffset = (index - (totalCards - 1) / 2.0f) * currentSpread;
                 float yOffset = handManager.baseHeightY + (index * handManager.layerOffsetY);
-                float zOffset = 0f;
 
                 if (handManager.handAreaAnchor != null)
                 {
-                    Vector3 localPos = new Vector3(xOffset, yOffset, zOffset);
+                    Vector3 localPos = new Vector3(xOffset, yOffset, 0f);
                     targetPos = handManager.handAreaAnchor.position + handManager.handAreaAnchor.TransformDirection(localPos);
-
                     float rotationAngle = -xOffset * 12f;
-                    Quaternion localRot = Quaternion.Euler(60f, 0f, rotationAngle);
-                    // Final upright rotation matching hand fan
-                    targetRot = handManager.handAreaAnchor.rotation * localRot;
+                    targetRot = handManager.handAreaAnchor.rotation * Quaternion.Euler(60f, 0f, rotationAngle);
                 }
                 else
                 {
-                    targetPos = new Vector3(xOffset, yOffset, -1.5f + zOffset);
-                    float rotationAngle = -xOffset * 12f;
-                    targetRot = Quaternion.Euler(60f, 0f, rotationAngle);
+                    targetPos = new Vector3(xOffset, yOffset, -1.5f);
+                    targetRot = Quaternion.Euler(60f, 0f, -xOffset * 12f);
                 }
             }
         }
 
-        // 3. Lerp everything smoothly over 0.3 seconds
         float duration = 0.3f;
         float elapsed = 0f;
 
@@ -312,8 +287,6 @@ public class CardDraggable3D : MonoBehaviour
         {
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
-
-            // Smooth ease-out curve for motion
             float smoothT = Mathf.Sin(t * Mathf.PI * 0.5f);
 
             transform.position = Vector3.Lerp(startPos, targetPos, smoothT);
@@ -327,6 +300,11 @@ public class CardDraggable3D : MonoBehaviour
 
         isFlipping = false;
         if (cardCollider != null) cardCollider.enabled = true;
+    }
+
+    public void StartDraggingImmediately()
+    {
+        PrepareForDrag();
     }
     #endregion
 
@@ -342,4 +320,39 @@ public class CardDraggable3D : MonoBehaviour
         if (rb != null) { rb.isKinematic = true; rb.useGravity = false; }
     }
     #endregion
+    private bool isIllegalCardOnTable = false;
+
+    public void MarkAsIllegalOnTable()
+    {
+        isIllegalCardOnTable = true;
+    }
+
+    private void OnMouseDown()
+    {
+        // If this card was marked as an illegal drop on the table, clicking it lets you pick it back up!
+        if (isIllegalCardOnTable && TurnManager_3D.Instance != null)
+        {
+            PickupIllegalCardFromTable();
+        }
+    }
+
+    public void PickupIllegalCardFromTable()
+    {
+        // 1. Add it back to the player's hand manager
+        if (RuleManager_3D.Instance != null && RuleManager_3D.Instance.playerHandManager != null)
+        {
+            RuleManager_3D.Instance.playerHandManager.AddExistingCardVisual(gameObject, cardData);
+        }
+
+        // 2. Resolve the illegal card penalty count in TurnManager
+        TurnManager_3D.Instance?.ResolveIllegalCardOnTable();
+
+        // 3. Reset state flags
+        isIllegalCardOnTable = false;
+
+        // 4. Re-enable dragging physics components
+        EnablePhysics(); // or whatever method restores your drag collider/rigidbody settings
+
+        Debug.Log("[CardDraggable3D] Picked up illegal card from table back into hand.");
+    }
 }
